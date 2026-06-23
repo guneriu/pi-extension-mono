@@ -150,41 +150,121 @@ async function fetchQuota(token: string, settings: Settings): Promise<QuotaData 
 
 // ─── Copilot Cost Calculation ─────────────────────────────────────────────────
 
+interface RatesCache {
+  updatedAt: string;                      // ISO timestamp of last fetch
+  rates: Record<string, CopilotRates>;   // exact model-name keys from GitHub YAML
+}
+
+function getRatesCacheFile(): string {
+  return join(getAgentDir(), "extensions", "pi-copilot-quota", "rates.json");
+}
+
 /**
  * Copilot credit rates (per 1M tokens). 1 credit = $0.01.
  *
  * Source: https://github.com/github/docs/blob/main/data/tables/copilot/models-and-pricing.yml
- * Last verified: 2026-06-23. Submit a PR to update rates for new models.
+ * Last verified: 2026-06-23.
  *
- * NOTE: These rates are NOT used for session/subagent cost calculation —
- * those use pi's usage.cost.total directly (always accurate, includes thinking tokens).
- * This table is used ONLY for the model-selector credit chip (future feature).
- *
- * Structure: credits per 1M tokens (input / cached_input / output / cache_write)
- * cache_write = rate for thinking tokens (Anthropic models only)
+ * NOTE: NOT used for session/subagent cost calculation — those use pi's
+ * usage.cost.total directly (accurate, includes thinking tokens).
+ * This table is the FALLBACK for the model-selector chip (future feature).
+ * Use /copilot-usage → "Refresh rates" to fetch latest from GitHub.
  */
 export const COPILOT_RATES: Record<string, CopilotRates> = {
   // Claude family — source: github/docs models-and-pricing.yml
-  "claude-fable":   { input: 1000, output: 5000, cached: 100  }, // Fable 5: $10/$50/$1 per M
-  "claude-opus":    { input: 500,  output: 2500, cached: 50   }, // Opus 4.x: $5/$25/$0.50 per M
-  "claude-sonnet":  { input: 300,  output: 1500, cached: 30   }, // Sonnet 4.x: $3/$15/$0.30 per M
-  "claude-haiku":   { input: 100,  output: 500,  cached: 10   }, // Haiku 4.5: $1/$5/$0.10 per M
+  "claude-fable":   { input: 1000, output: 5000, cached: 100  },
+  "claude-opus":    { input: 500,  output: 2500, cached: 50   },
+  "claude-sonnet":  { input: 300,  output: 1500, cached: 30   },
+  "claude-haiku":   { input: 100,  output: 500,  cached: 10   },
   // GPT/OpenAI family
-  "gpt-5.5":        { input: 500,  output: 3000, cached: 50   }, // GPT-5.5 ≤272K: $5/$30/$0.50 per M
-  "gpt-5.4-nano":   { input: 20,   output: 125,  cached: 2    }, // GPT-5.4 nano: $0.20/$1.25/$0.02 per M
-  "gpt-5.4-mini":   { input: 75,   output: 450,  cached: 7.5  }, // GPT-5.4 mini: $0.75/$4.50/$0.075 per M
-  "gpt-5.4":        { input: 250,  output: 1500, cached: 25   }, // GPT-5.4 ≤272K: $2.50/$15/$0.25 per M
-  "gpt-5.3":        { input: 175,  output: 1400, cached: 17.5 }, // GPT-5.3-Codex: $1.75/$14/$0.175 per M
-  "gpt-5-mini":     { input: 25,   output: 200,  cached: 2.5  }, // GPT-5 mini: $0.25/$2/$0.025 per M
+  "gpt-5.5":        { input: 500,  output: 3000, cached: 50   },
+  "gpt-5.4-nano":   { input: 20,   output: 125,  cached: 2    },
+  "gpt-5.4-mini":   { input: 75,   output: 450,  cached: 7.5  },
+  "gpt-5.4":        { input: 250,  output: 1500, cached: 25   },
+  "gpt-5.3":        { input: 175,  output: 1400, cached: 17.5 },
+  "gpt-5-mini":     { input: 25,   output: 200,  cached: 2.5  },
   // Google Gemini family
-  "gemini-3.5":     { input: 150,  output: 900,  cached: 15   }, // Gemini 3.5 Flash: $1.50/$9/$0.15 per M
-  "gemini-3.1-pro": { input: 200,  output: 1200, cached: 20   }, // Gemini 3.1 Pro ≤200K: $2/$12/$0.20 per M
-  "gemini-3-flash": { input: 50,   output: 300,  cached: 5    }, // Gemini 3 Flash: $0.50/$3/$0.05 per M
-  "gemini-2.5-pro": { input: 125,  output: 1000, cached: 12.5 }, // Gemini 2.5 Pro: $1.25/$10/$0.125 per M
+  "gemini-3.5":     { input: 150,  output: 900,  cached: 15   },
+  "gemini-3.1-pro": { input: 200,  output: 1200, cached: 20   },
+  "gemini-3-flash": { input: 50,   output: 300,  cached: 5    },
+  "gemini-2.5-pro": { input: 125,  output: 1000, cached: 12.5 },
   // Microsoft / GitHub fine-tuned
-  "mai-code":       { input: 75,   output: 450,  cached: 7.5  }, // MAI-Code-1-Flash: $0.75/$4.50/$0.075 per M
-  "raptor-mini":    { input: 25,   output: 200,  cached: 2.5  }, // Raptor mini (GPT-5 mini pricing)
+  "mai-code":       { input: 75,   output: 450,  cached: 7.5  },
+  "raptor-mini":    { input: 25,   output: 200,  cached: 2.5  },
 };
+
+/** Load rates: fetched cache overrides hardcoded fallback. */
+export function loadCopilotRates(): Record<string, CopilotRates> {
+  try {
+    const cache: RatesCache = JSON.parse(readFileSync(getRatesCacheFile(), "utf-8"));
+    return { ...COPILOT_RATES, ...cache.rates };
+  } catch {
+    return { ...COPILOT_RATES };
+  }
+}
+
+/** Return ISO timestamp of last rates fetch, or undefined if never fetched. */
+export function getRatesUpdatedAt(): string | undefined {
+  try {
+    const cache: RatesCache = JSON.parse(readFileSync(getRatesCacheFile(), "utf-8"));
+    return cache.updatedAt;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Parse GitHub's models-and-pricing.yml into a CopilotRates map.
+ * Keys are exact model names lowercased, spaces → dashes.
+ * Skips non-default pricing tiers (e.g. GPT-5.4 "Long context" >272K).
+ */
+function parseRatesYaml(yaml: string): Record<string, CopilotRates> {
+  const rates: Record<string, CopilotRates> = {};
+  const sections = yaml.split(/(?=^- model:)/m).filter(s => s.trim().startsWith("- model:"));
+
+  for (const section of sections) {
+    // Skip non-default tiers
+    if (/^\s+tier:/m.test(section) && !/tier:\s*['"]?Default['"]?/m.test(section)) continue;
+
+    const modelMatch  = section.match(/^- model:\s*['"]?([^'"\n]+?)['"]?\s*$/m);
+    const inputMatch  = section.match(/^  input:\s*\$([0-9.]+)/m);
+    const cachedMatch = section.match(/^  cached_input:\s*\$([0-9.]+)/m);
+    const outputMatch = section.match(/^  output:\s*\$([0-9.]+)/m);
+
+    if (!modelMatch || !inputMatch || !outputMatch) continue;
+
+    const name   = modelMatch[1].trim();
+    const key    = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9.-]/g, "");
+    const input  = Math.round(parseFloat(inputMatch[1])  * 100);
+    const cached = cachedMatch ? Math.round(parseFloat(cachedMatch[1]) * 100) : Math.round(input * 0.1);
+    const output = Math.round(parseFloat(outputMatch[1]) * 100);
+
+    if (input > 0 && output > 0) rates[key] = { input, cached, output };
+  }
+
+  return rates;
+}
+
+/**
+ * Fetch the latest Copilot credit rates from GitHub's public docs repo,
+ * parse the YAML, save to rates.json, return count + timestamp.
+ * Always fetches from github.com (docs are public, no auth needed).
+ */
+export async function fetchAndSaveCopilotRates(): Promise<{ count: number; updatedAt: string }> {
+  const url = "https://raw.githubusercontent.com/github/docs/main/data/tables/copilot/models-and-pricing.yml";
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch rates: HTTP ${res.status}`);
+  const yaml = await res.text();
+
+  const rates = parseRatesYaml(yaml);
+  if (Object.keys(rates).length === 0) {
+    throw new Error("Parsed 0 rates — YAML format may have changed");
+  }
+
+  const updatedAt = new Date().toISOString();
+  writeFileSync(getRatesCacheFile(), JSON.stringify({ updatedAt, rates }, null, 2), "utf-8");
+  return { count: Object.keys(rates).length, updatedAt };
+}
 
 /** Match a model ID to its Copilot credit rates (longest prefix wins). */
 export function getCopilotRates(modelId: string): CopilotRates | undefined {
@@ -456,9 +536,19 @@ export default function (pi: ExtensionAPI) {
           },
           {
             id: "refresh-now",
-            label: "↺  Refresh now",
+            label: "↺  Refresh quota now",
             currentValue: "",
             values: [""],
+          },
+          {
+            id: "refresh-rates",
+            label: "↺  Refresh rates from GitHub",
+            currentValue: getRatesUpdatedAt()
+              ? `last: ${new Date(getRatesUpdatedAt()!).toLocaleDateString()}`
+              : "never fetched",
+            values: [getRatesUpdatedAt()
+              ? `last: ${new Date(getRatesUpdatedAt()!).toLocaleDateString()}`
+              : "never fetched"],
           },
         ];
 
@@ -472,6 +562,19 @@ export default function (pi: ExtensionAPI) {
           getSettingsListTheme(),
           (id, newValue) => {
             if (id === "refresh-now") { void doFetch(); ctx.ui.notify("Refreshing quota…", "info"); return; }
+            if (id === "refresh-rates") {
+              done(undefined); // close dialog first — fetchAndSaveCopilotRates is async
+              ctx.ui.notify("Fetching rates from GitHub…", "info");
+              void fetchAndSaveCopilotRates()
+                .then(({ count, updatedAt }) => {
+                  const date = new Date(updatedAt).toLocaleDateString();
+                  ctx.ui.notify(`✅ Rates updated: ${count} models (${date})`, "info");
+                })
+                .catch((err: Error) => {
+                  ctx.ui.notify(`❌ Failed to fetch rates: ${err.message}`, "error");
+                });
+              return;
+            }
             if (id === "set-host") {
               // Close dialog first, then open input prompt
               openHostInput = true;
