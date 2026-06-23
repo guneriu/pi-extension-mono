@@ -114,19 +114,23 @@ export default function (pi: ExtensionAPI) {
           // ── Single branch snapshot ────────────────────────────────
           const branch = ctx.sessionManager.getBranch();
 
-          // ── Accumulate token totals for footer display ─────────────────
+          // ── Token totals — getEntries() matches pi's built-in footer ──────────
           let input = 0;
           let output = 0;
           let cacheRead = 0;
           let cacheWrite = 0;
+          let latestCacheHitRate = null;
 
-          for (const e of branch) {
-            if (e.type === "message" && e.message.role === "assistant") {
-              const m = e.message as AssistantMessage;
+          const allEntries = ctx.sessionManager.getEntries ? ctx.sessionManager.getEntries() : branch;
+          for (const e of allEntries) {
+            if (e.type === "message" && e.message?.role === "assistant") {
+              const m = e.message;
               input     += m.usage.input;
               output    += m.usage.output;
               cacheRead  += m.usage.cacheRead;
               cacheWrite += m.usage.cacheWrite;
+              const lp = m.usage.input + m.usage.cacheRead + m.usage.cacheWrite;
+              if (lp > 0) latestCacheHitRate = (m.usage.cacheRead / lp) * 100;
             }
           }
 
@@ -139,11 +143,9 @@ export default function (pi: ExtensionAPI) {
           const costFormatted = formatSessionCopilotCostDisplay(copilotCost, subagentCost);
           const costStr = costFormatted ? theme.fg("dim", costFormatted) : "";
 
-          // ── Cache hit ratio ─────────────────────────────────────────────
-          const totalIn = input + cacheRead + cacheWrite;
-          const cacheHitPct = totalIn > 0 ? (cacheRead / totalIn) * 100 : null;
-          const cacheStr = cacheHitPct !== null
-            ? theme.fg("warning", `💾 CH${cacheHitPct.toFixed(1)}%`)
+          // ── Cache hit ratio (latest turn only — matches pi built-in) ────
+          const cacheStr = latestCacheHitRate !== null
+            ? theme.fg("warning", `💾 CH${latestCacheHitRate.toFixed(1)}%`)
             : "";
 
           // ── Context window usage (with mini bar) ──────────────────────
