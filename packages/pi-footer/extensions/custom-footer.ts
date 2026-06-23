@@ -150,7 +150,7 @@ export default function (pi: ExtensionAPI) {
           let ctxStr = "";
           if (ctxUsage) {
             const pct    = ctxUsage.percent ?? 0;
-            const filled = Math.round((pct / 100) * 6);
+            const filled = Math.min(6, Math.max(0, Math.round((pct / 100) * 6)));
             const bar    = "█".repeat(filled) + "░".repeat(6 - filled);
             const color  = contextColor(ctxUsage.percent);
             const label  = ctxUsage.percent !== null
@@ -197,7 +197,7 @@ export default function (pi: ExtensionAPI) {
           const line1       = truncateToWidth(pathStr + branchStr + sessionStr, width);
 
           // ── Line 2: tokens (left)  thinking+model (right) ───────────────
-          const gap2 = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
+          const gap2 = Math.max(0, width - visibleWidth(left) - visibleWidth(right));
           const line2 = truncateToWidth(left + " ".repeat(gap2) + right, width);
 
           return [line1, line2];
