@@ -48,9 +48,10 @@ interface QuotaData {
 }
 
 interface CopilotRates {
-  input: number;
-  output: number;
-  cached: number;
+  input: number;       // credits/M for input tokens
+  output: number;      // credits/M for output tokens
+  cached: number;      // credits/M for cache reads
+  cacheWrite?: number; // credits/M for cache writes (Anthropic only — thinking tokens)
 }
 
 interface SessionEntry {
@@ -172,10 +173,10 @@ function getRatesCacheFile(): string {
  */
 export const COPILOT_RATES: Record<string, CopilotRates> = {
   // Claude family — source: github/docs models-and-pricing.yml
-  "claude-fable":   { input: 1000, output: 5000, cached: 100  },
-  "claude-opus":    { input: 500,  output: 2500, cached: 50   },
-  "claude-sonnet":  { input: 300,  output: 1500, cached: 30   },
-  "claude-haiku":   { input: 100,  output: 500,  cached: 10   },
+  "claude-fable":   { input: 1000, output: 5000, cached: 100, cacheWrite: 1250 },
+  "claude-opus":    { input: 500,  output: 2500, cached: 50,  cacheWrite: 625  },
+  "claude-sonnet":  { input: 300,  output: 1500, cached: 30,  cacheWrite: 375  },
+  "claude-haiku":   { input: 100,  output: 500,  cached: 10,  cacheWrite: 125  },
   // GPT/OpenAI family
   "gpt-5.5":        { input: 500,  output: 3000, cached: 50   },
   "gpt-5.4-nano":   { input: 20,   output: 125,  cached: 2    },
@@ -239,7 +240,12 @@ function parseRatesYaml(yaml: string): Record<string, CopilotRates> {
     const cached = cachedMatch ? Math.round(parseFloat(cachedMatch[1]) * 100) : Math.round(input * 0.1);
     const output = Math.round(parseFloat(outputMatch[1]) * 100);
 
-    if (input > 0 && output > 0) rates[key] = { input, cached, output };
+    const cacheWriteMatch = section.match(/^  cache_write:\s*\$([0-9.]+)/m);
+    const cacheWrite = cacheWriteMatch ? Math.round(parseFloat(cacheWriteMatch[1]) * 100) : undefined;
+
+    if (input > 0 && output > 0) {
+      rates[key] = { input, cached, output, ...(cacheWrite !== undefined ? { cacheWrite } : {}) };
+    }
   }
 
   return rates;
@@ -388,23 +394,6 @@ export function formatSessionCopilotCostDisplay(
 
 // ─── Display helpers ──────────────────────────────────────────────────────────
 
-const MODEL_RATES_STATUS_KEY = "copilot-model-rates";
-
-/**
- * Build the model rate chip text for the footer.
- * Shows credit cost per 1M tokens for the currently selected model.
- * Format: 💳 ↑300 ↓1.5k /M  (input ↑, output ↓, per million tokens)
- */
-function buildModelRateChip(modelId: string, theme: Theme): string | undefined {
-  const rates = getCopilotRates(modelId);
-  if (!rates) return undefined;
-
-  const fmtCr = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
-  return theme.fg("dim",
-    `💳 ↑${fmtCr(rates.input)} ↓${fmtCr(rates.output)} cr/M`
-  );
-}
-
 function formatCompact(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 }
@@ -430,6 +419,48 @@ function buildChipText(data: QuotaData, settings: Settings, theme: Theme): strin
 }
 
 // ─── Extension ────────────────────────────────────────────────────────────────
+
+// ─── Provider cost patch ──────────────────────────────────────────────────────
+
+/**
+ * Patch the github-copilot provider models with Copilot credit rates so pi's
+ * built-in /model picker shows credit costs rather than raw Anthropic dollar rates.
+ *
+ * Cost field unit: $/token  (credits/M × 1e-8 = $/token)
+ * Models with no rate match keep their original cost (never removed from picker).
+ */
+async function patchGithubCopilotRates(piApi: ExtensionAPI, ctx: any): Promise<void> {
+  const allModels: any[] = ctx.modelRegistry.getAll();
+  const copilotModels = allModels.filter((m: any) => m.provider === "github-copilot");
+  if (copilotModels.length === 0) return;
+
+  const toPerToken = (crPerM: number): number => crPerM * 1e-8;
+
+  const patchedModels = copilotModels.map((m: any) => {
+    const rates = getCopilotRates(m.id);
+    return {
+      id:               m.id,
+      name:             m.name,
+      api:              m.api,
+      baseUrl:          m.baseUrl,
+      reasoning:        m.reasoning ?? false,
+      thinkingLevelMap: m.thinkingLevelMap,
+      input:            m.input ?? ["text"],
+      contextWindow:    m.contextWindow ?? 200_000,
+      maxTokens:        m.maxTokens ?? 16_384,
+      headers:          m.headers,
+      compat:           m.compat,
+      cost: rates ? {
+        input:      toPerToken(rates.input),
+        output:     toPerToken(rates.output),
+        cacheRead:  toPerToken(rates.cached),
+        cacheWrite: toPerToken(rates.cacheWrite ?? rates.cached),
+      } : m.cost,
+    };
+  });
+
+  piApi.registerProvider("github-copilot", { models: patchedModels });
+}
 
 export default function (pi: ExtensionAPI) {
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -491,12 +522,8 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", "🤖 …"));
     void doFetch();
     startTimer(settings);
-    // Show model rate chip for the current model immediately
-    const currentModelId = (ctx.model as any)?.id ?? (ctx.model as any)?.name ?? "";
-    if (currentModelId) {
-      const chip = buildModelRateChip(currentModelId, ctx.ui.theme);
-      ctx.ui.setStatus(MODEL_RATES_STATUS_KEY, chip ?? undefined);
-    }
+    // Patch /model picker to show Copilot credit rates
+    void patchGithubCopilotRates(pi, ctx);
   });
 
   pi.on("session_shutdown", async () => {
@@ -505,15 +532,6 @@ export default function (pi: ExtensionAPI) {
     activeCtx = null;
   });
 
-  // ── Model rate chip — updates on every model change ──────────────────────
-  pi.on("model_select", async (event, ctx) => {
-    if (ctx.mode !== "tui") return;
-    const settings = loadSettings();
-    if (!settings.enabled) return;
-
-    const chip = buildModelRateChip(event.model.id, ctx.ui.theme);
-    ctx.ui.setStatus(MODEL_RATES_STATUS_KEY, chip ?? undefined);
-  });
 
   pi.registerCommand("copilot-usage", {
     description: "GitHub Copilot quota settings",
@@ -605,6 +623,8 @@ export default function (pi: ExtensionAPI) {
                 .then(({ count, updatedAt }) => {
                   const date = new Date(updatedAt).toLocaleDateString();
                   ctx.ui.notify(`✅ Rates updated: ${count} models (${date})`, "info");
+                  // Re-patch the /model picker with freshly fetched rates
+                  if (activeCtx) void patchGithubCopilotRates(pi, activeCtx);
                 })
                 .catch((err: Error) => {
                   ctx.ui.notify(`❌ Failed to fetch rates: ${err.message}`, "error");
@@ -619,7 +639,7 @@ export default function (pi: ExtensionAPI) {
             }
             if (id === "enabled") {
               settings.enabled = newValue === "on";
-              if (!settings.enabled) { ctx.ui.setStatus(STATUS_KEY, undefined); ctx.ui.setStatus(MODEL_RATES_STATUS_KEY, undefined); clearInterval(timer); timer = undefined; }
+              if (!settings.enabled) { ctx.ui.setStatus(STATUS_KEY, undefined); clearInterval(timer); timer = undefined; }
               else { ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", "🤖 …")); activeCtx = ctx; void doFetch(); startTimer(settings); }
             }
             if (id === "clearGithubTokenEnv") settings.clearGithubTokenEnv = newValue === "on";
