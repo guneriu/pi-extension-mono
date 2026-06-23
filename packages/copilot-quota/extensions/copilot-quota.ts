@@ -152,30 +152,38 @@ async function fetchQuota(token: string, settings: Settings): Promise<QuotaData 
 
 /**
  * Copilot credit rates (per 1M tokens). 1 credit = $0.01.
- * Last verified: 2026-06-22. Submit a PR to update rates for new models.
+ *
+ * Source: https://github.com/github/docs/blob/main/data/tables/copilot/models-and-pricing.yml
+ * Last verified: 2026-06-23. Submit a PR to update rates for new models.
+ *
+ * NOTE: These rates are NOT used for session/subagent cost calculation —
+ * those use pi's usage.cost.total directly (always accurate, includes thinking tokens).
+ * This table is used ONLY for the model-selector credit chip (future feature).
+ *
+ * Structure: credits per 1M tokens (input / cached_input / output / cache_write)
+ * cache_write = rate for thinking tokens (Anthropic models only)
  */
 export const COPILOT_RATES: Record<string, CopilotRates> = {
-  // Claude family
-  "claude-opus":    { input: 250, output: 750,  cached: 25   },
-  "claude-fable":   { input: 250, output: 750,  cached: 25   },
-  "claude-sonnet":  { input: 80,  output: 400,  cached: 8    },
-  "claude-haiku":   { input: 10,  output: 50,   cached: 1    },
-  // GPT family
-  "gpt-4.1":        { input: 100, output: 300,  cached: 10   },
-  "gpt-5-mini":     { input: 25,  output: 50,   cached: 2.5  },
-  "gpt-5.2":        { input: 175, output: 700,  cached: 17.5 },
-  "gpt-5.3":        { input: 175, output: 700,  cached: 17.5 },
-  "gpt-5.4-nano":   { input: 20,  output: 80,   cached: 2    },
-  "gpt-5.4-mini":   { input: 75,  output: 300,  cached: 7.5  },
-  "gpt-5.4":        { input: 250, output: 1000, cached: 25   },
-  "gpt-5.5":        { input: 500, output: 2000, cached: 50   },
-  // Gemini family
-  "gemini-2.5-pro": { input: 125, output: 250,  cached: 12.5 },
-  "gemini-3-flash": { input: 50,  output: 200,  cached: 5    },
-  "gemini-3.1-pro": { input: 200, output: 800,  cached: 20   },
-  "gemini-3.5":     { input: 150, output: 600,  cached: 15   },
-  // Other
-  "raptor-mini":    { input: 10,  output: 50,   cached: 1    },
+  // Claude family — source: github/docs models-and-pricing.yml
+  "claude-fable":   { input: 1000, output: 5000, cached: 100  }, // Fable 5: $10/$50/$1 per M
+  "claude-opus":    { input: 500,  output: 2500, cached: 50   }, // Opus 4.x: $5/$25/$0.50 per M
+  "claude-sonnet":  { input: 300,  output: 1500, cached: 30   }, // Sonnet 4.x: $3/$15/$0.30 per M
+  "claude-haiku":   { input: 100,  output: 500,  cached: 10   }, // Haiku 4.5: $1/$5/$0.10 per M
+  // GPT/OpenAI family
+  "gpt-5.5":        { input: 500,  output: 3000, cached: 50   }, // GPT-5.5 ≤272K: $5/$30/$0.50 per M
+  "gpt-5.4-nano":   { input: 20,   output: 125,  cached: 2    }, // GPT-5.4 nano: $0.20/$1.25/$0.02 per M
+  "gpt-5.4-mini":   { input: 75,   output: 450,  cached: 7.5  }, // GPT-5.4 mini: $0.75/$4.50/$0.075 per M
+  "gpt-5.4":        { input: 250,  output: 1500, cached: 25   }, // GPT-5.4 ≤272K: $2.50/$15/$0.25 per M
+  "gpt-5.3":        { input: 175,  output: 1400, cached: 17.5 }, // GPT-5.3-Codex: $1.75/$14/$0.175 per M
+  "gpt-5-mini":     { input: 25,   output: 200,  cached: 2.5  }, // GPT-5 mini: $0.25/$2/$0.025 per M
+  // Google Gemini family
+  "gemini-3.5":     { input: 150,  output: 900,  cached: 15   }, // Gemini 3.5 Flash: $1.50/$9/$0.15 per M
+  "gemini-3.1-pro": { input: 200,  output: 1200, cached: 20   }, // Gemini 3.1 Pro ≤200K: $2/$12/$0.20 per M
+  "gemini-3-flash": { input: 50,   output: 300,  cached: 5    }, // Gemini 3 Flash: $0.50/$3/$0.05 per M
+  "gemini-2.5-pro": { input: 125,  output: 1000, cached: 12.5 }, // Gemini 2.5 Pro: $1.25/$10/$0.125 per M
+  // Microsoft / GitHub fine-tuned
+  "mai-code":       { input: 75,   output: 450,  cached: 7.5  }, // MAI-Code-1-Flash: $0.75/$4.50/$0.075 per M
+  "raptor-mini":    { input: 25,   output: 200,  cached: 2.5  }, // Raptor mini (GPT-5 mini pricing)
 };
 
 /** Match a model ID to its Copilot credit rates (longest prefix wins). */
@@ -191,8 +199,13 @@ export function getCopilotRates(modelId: string): CopilotRates | undefined {
   return best;
 }
 
-/** Calculate cost for a single message using Copilot rates (in dollars). */
-function copilotMsgCost(
+/**
+ * Calculate cost for a single message using Copilot credit rates.
+ * Used ONLY for the model-selector chip (future feature) where
+ * we need to estimate cost by model name before any usage data exists.
+ * For actual session/subagent cost, use usage.cost.total directly.
+ */
+export function copilotMsgCost(
   usage: { input: number; output: number; cacheRead: number },
   rates: CopilotRates,
 ): number {
@@ -202,8 +215,17 @@ function copilotMsgCost(
   return (inputCredits + outputCredits + cachedCredits) * 0.01;
 }
 
-/** Calculate total session cost using Copilot rates (github-copilot provider only).
- *  Returns 0 if disabled or no matching messages found. */
+/**
+ * Calculate total session Copilot cost in dollars.
+ *
+ * Uses pi's usage.cost.total directly — this is the most accurate approach:
+ *   ✅ Pi registers official GitHub Copilot rates ($/M, from github/docs)
+ *   ✅ Includes ALL token types: input, output, cacheRead, cacheWrite
+ *   ✅ cacheWrite = thinking tokens (e.g. 97% of cost when extended thinking active)
+ *   ✅ Automatically correct when GitHub updates rates in pi
+ *
+ * Returns 0 if disabled or no github-copilot messages found.
+ */
 export function calculateSessionCopilotCost(branch: SessionEntry[]): number {
   const settings = loadSettings();
   if (!settings.enabled) return 0;
@@ -211,10 +233,9 @@ export function calculateSessionCopilotCost(branch: SessionEntry[]): number {
   let totalCost = 0;
   for (const entry of branch) {
     if (entry.type === "message" && entry.message?.role === "assistant") {
-      const m = entry.message;
-      if (m.provider === "github-copilot" && m.usage) {
-        const rates = getCopilotRates(m.model ?? m.responseModel ?? "");
-        totalCost += rates ? copilotMsgCost(m.usage, rates) : 0;
+      const m = entry.message as any;
+      if (m.provider === "github-copilot" && typeof m.usage?.cost?.total === "number") {
+        totalCost += m.usage.cost.total;
       }
     }
   }
@@ -222,9 +243,10 @@ export function calculateSessionCopilotCost(branch: SessionEntry[]): number {
 }
 
 /**
- * Calculate total Copilot cost for subagents by reading toolResult entries
- * from the parent session branch. Subagents record usage at:
- *   toolResult.message.details.results[].usage / .model
+ * Calculate total Copilot cost for subagents from the parent session branch.
+ *
+ * Subagent toolResults store usage differently from assistant messages:
+ *   toolResult.details.results[].usage.cost is a SCALAR (not an object)
  *
  * Works regardless of session persistence (--no-session subagents included).
  *
@@ -244,16 +266,14 @@ export function calculateSubagentsCopilotCost(branch: SessionEntry[]): number {
 
     const results: any[] = msg.details?.results ?? [];
     for (const r of results) {
-      const usage = r.usage;
-      const model: string = r.model ?? "";
-      if (!usage || !model) continue;
-      const rates = getCopilotRates(model);
-      if (!rates) continue;
-      totalCost += copilotMsgCost({
-        input:     usage.input     ?? 0,
-        output:    usage.output    ?? 0,
-        cacheRead: usage.cacheRead ?? 0,
-      }, rates);
+      const cost = r.usage?.cost;
+      // Subagent cost is a scalar number (not an object like parent messages)
+      if (typeof cost === "number") {
+        totalCost += cost;
+      } else if (typeof cost?.total === "number") {
+        // Fallback: handle if shape ever changes to match parent messages
+        totalCost += cost.total;
+      }
     }
   }
   return totalCost;
