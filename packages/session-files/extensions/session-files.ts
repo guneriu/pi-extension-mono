@@ -102,8 +102,11 @@ function analyzeSessionFiles(branch: any[]): Map<string, FileInfo> {
       const args = block.arguments || {};
 
       const trackFile = (path: string, type: "read" | "modified") => {
-        const existing = files.get(path);
-        files.set(path, {
+        // Use path+type as composite key so a file that is both read AND modified
+        // appears in both sections (previously, modified would overwrite the read entry)
+        const key = `${type}:${path}`;
+        const existing = files.get(key);
+        files.set(key, {
           path, type,
           count: (existing?.count || 0) + 1,
           firstTimestamp: existing?.firstTimestamp || entry.timestamp,
@@ -207,17 +210,25 @@ export default function (pi: ExtensionAPI) {
       }
 
       const modifiedFiles = sortFiles(Array.from(sessionFiles.values()).filter(f => f.type === "modified"), sortBy);
+      const maxModified = settings.maxFilesToShow > 0 ? settings.maxFilesToShow : Infinity;
 
       if (settings.trackModified && (filterType === "all" || filterType === "modified") && modifiedFiles.length > 0) {
         output += theme.fg("warning", "✏️  Files Modified") + ` (${modifiedFiles.length}):\n`;
-        for (const file of modifiedFiles) {
+        for (const file of modifiedFiles.slice(0, maxModified)) {
           const count = file.count > 1 ? theme.fg("dim", ` (${file.count}x)`) : "";
           output += theme.fg("dim", "  • ") + theme.fg("muted", file.path) + count + "\n";
         }
+        if (modifiedFiles.length > maxModified)
+          output += theme.fg("dim", `  ... and ${modifiedFiles.length - maxModified} more\n`);
         output += "\n";
       }
 
-      const totalFiles = new Set([...contextFiles.map(f => f.path), ...sessionFiles.keys()]).size;
+      // Deduplicate by path — sessionFiles keys are composite "type:path" since the fix
+      const uniquePaths = new Set([
+        ...contextFiles.map(f => f.path),
+        ...Array.from(sessionFiles.values()).map(f => f.path),
+      ]);
+      const totalFiles = uniquePaths.size;
       output += theme.fg("dim", "─".repeat(50)) + "\n";
       output += theme.fg("accent", "📊 Summary") + ": " +
         theme.fg("success", `${totalFiles} total`) + " | " +

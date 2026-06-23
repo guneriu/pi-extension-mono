@@ -236,12 +236,13 @@ function parseRatesYaml(yaml: string): Record<string, CopilotRates> {
 
     const name   = modelMatch[1].trim();
     const key    = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9.-]/g, "");
-    const input  = Math.round(parseFloat(inputMatch[1])  * 100);
-    const cached = cachedMatch ? Math.round(parseFloat(cachedMatch[1]) * 100) : Math.round(input * 0.1);
-    const output = Math.round(parseFloat(outputMatch[1]) * 100);
+    // Keep fractional credits (e.g. $0.025 = 2.5 cr) — Math.round would corrupt GPT-5 mini rates
+    const input  = parseFloat(inputMatch[1])  * 100;
+    const cached = cachedMatch ? parseFloat(cachedMatch[1]) * 100 : input * 0.1;
+    const output = parseFloat(outputMatch[1]) * 100;
 
     const cacheWriteMatch = section.match(/^  cache_write:\s*\$([0-9.]+)/m);
-    const cacheWrite = cacheWriteMatch ? Math.round(parseFloat(cacheWriteMatch[1]) * 100) : undefined;
+    const cacheWrite = cacheWriteMatch ? parseFloat(cacheWriteMatch[1]) * 100 : undefined;
 
     if (input > 0 && output > 0) {
       rates[key] = { input, cached, output, ...(cacheWrite !== undefined ? { cacheWrite } : {}) };
@@ -377,12 +378,13 @@ export function formatSessionCopilotCostDisplay(
   if (!settings.enabled || totalCost === 0) return "";
 
   if (settings.costFormat === "credits") {
-    const totalCr = Math.round(totalCost / 0.01);
+    // Mirror money format: show parent cr ↳ subagent cr (not total ↳ sub)
+    const parentCr = Math.round(parentCost / 0.01);
     if (subagentCost > 0) {
       const subCr = Math.round(subagentCost / 0.01);
-      return `${totalCr} cr ↳ ${subCr} cr`;
+      return `${parentCr} cr ↳ ${subCr} cr`;
     }
-    return `${totalCr} cr`;
+    return `${parentCr} cr`;
   }
 
   if (subagentCost > 0) {
@@ -668,10 +670,18 @@ export default function (pi: ExtensionAPI) {
       // Sort by input rate (cheapest first)
       const sorted = Object.entries(rates).sort(([, a], [, b]) => a.input - b.input);
 
+      // Determine current: exact match wins over prefix to avoid marking gpt-5.4 when gpt-5.4-mini is active
+      const exactMatch = sorted.find(([k]) => k === currentModelId);
+      const isCurrentFn = (key: string) => exactMatch
+        ? key === currentModelId
+        : currentModelId.startsWith(key);
+
       for (const [key, r] of sorted) {
-        const isCurrent = currentModelId.startsWith(key) || key === currentModelId;
+        const isCurrent = isCurrentFn(key);
         const prefix = isCurrent ? theme.fg("success", "▶ ") : "  ";
-        const nameCol = (isCurrent ? key + " ← current" : key).padEnd(col1 - 2);
+        // Truncate to col1-2 chars so " ← current" suffix never breaks column alignment
+        const label = isCurrent ? (key + " ← current").slice(0, col1 - 2) : key.slice(0, col1 - 2);
+        const nameCol = label.padEnd(col1 - 2);
         const name = isCurrent ? theme.fg("success", nameCol) : theme.fg("muted", nameCol);
         const inp    = theme.fg("dim", `${fmtCr(r.input)} cr`.padStart(col2));
         const cached = theme.fg("dim", `${fmtCr(r.cached)} cr`.padStart(col3));
