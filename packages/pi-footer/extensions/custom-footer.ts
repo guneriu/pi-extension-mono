@@ -110,36 +110,31 @@ export default function (pi: ExtensionAPI) {
         invalidate() {},
 
         render(width: number): string[] {
-          // ── Accumulate session token totals ─────────────────────────────
+          // ── Single branch snapshot ────────────────────────────────
+          const branch = ctx.sessionManager.getBranch();
+
+          // ── Accumulate token totals for footer display ─────────────────
           let input = 0;
           let output = 0;
           let cacheRead = 0;
           let cacheWrite = 0;
-          let cost = 0;
 
-          for (const e of ctx.sessionManager.getBranch()) {
+          for (const e of branch) {
             if (e.type === "message" && e.message.role === "assistant") {
               const m = e.message as AssistantMessage;
               input     += m.usage.input;
               output    += m.usage.output;
               cacheRead  += m.usage.cacheRead;
               cacheWrite += m.usage.cacheWrite;
-
-              cost      += m.usage.cost.total;
             }
           }
 
-          // For github-copilot: override cost with Copilot's credit-based rates
-          const branch = ctx.sessionManager.getBranch();
+          // ── Copilot cost (uses pi's usage.cost.total — already correct) ───
+          // Pi registers official GitHub Copilot rates for the github-copilot
+          // provider, so usage.cost.total is accurate Copilot billing in $.
+          // Plugin value: credits display mode + quota chip + subagent breakdown.
           const copilotCost = calculateSessionCopilotCost(branch as any);
-          // Subagent costs: read directly from toolResult entries in parent branch
           const subagentCost = calculateSubagentsCopilotCost(branch as any);
-          if (copilotCost > 0 || subagentCost > 0) {
-            cost = copilotCost + subagentCost;
-          }
-
-          // Format cost: delegate to copilot-quota for formatting logic
-          // Pass both parent and subagent costs for detailed display
           const costFormatted = formatSessionCopilotCostDisplay(copilotCost, subagentCost);
           const costStr = costFormatted ? theme.fg("dim", costFormatted) : "";
 
