@@ -266,13 +266,16 @@ export async function fetchAndSaveCopilotRates(): Promise<{ count: number; updat
   return { count: Object.keys(rates).length, updatedAt };
 }
 
-/** Match a model ID to its Copilot credit rates (longest prefix wins). */
+/** Match a model ID against the live rates table (cached > hardcoded fallback).
+ *  Uses longest prefix matching so "claude-sonnet-4.6" matches "claude-sonnet-4.6"
+ *  exactly if fetched, or falls back to the "claude-sonnet" prefix key. */
 export function getCopilotRates(modelId: string): CopilotRates | undefined {
+  const rates = loadCopilotRates(); // cached (fetched) overrides hardcoded fallback
   let best: CopilotRates | undefined;
   let bestLen = 0;
-  for (const [prefix, rates] of Object.entries(COPILOT_RATES)) {
+  for (const [prefix, r] of Object.entries(rates)) {
     if (modelId.startsWith(prefix) && prefix.length > bestLen) {
-      best = rates;
+      best = r;
       bestLen = prefix.length;
     }
   }
@@ -385,6 +388,23 @@ export function formatSessionCopilotCostDisplay(
 
 // ─── Display helpers ──────────────────────────────────────────────────────────
 
+const MODEL_RATES_STATUS_KEY = "copilot-model-rates";
+
+/**
+ * Build the model rate chip text for the footer.
+ * Shows credit cost per 1M tokens for the currently selected model.
+ * Format: 💳 ↑300 ↓1.5k /M  (input ↑, output ↓, per million tokens)
+ */
+function buildModelRateChip(modelId: string, theme: Theme): string | undefined {
+  const rates = getCopilotRates(modelId);
+  if (!rates) return undefined;
+
+  const fmtCr = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
+  return theme.fg("dim",
+    `💳 ↑${fmtCr(rates.input)} ↓${fmtCr(rates.output)} cr/M`
+  );
+}
+
 function formatCompact(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 }
@@ -471,12 +491,28 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", "🤖 …"));
     void doFetch();
     startTimer(settings);
+    // Show model rate chip for the current model immediately
+    const currentModelId = (ctx.model as any)?.id ?? (ctx.model as any)?.name ?? "";
+    if (currentModelId) {
+      const chip = buildModelRateChip(currentModelId, ctx.ui.theme);
+      ctx.ui.setStatus(MODEL_RATES_STATUS_KEY, chip ?? undefined);
+    }
   });
 
   pi.on("session_shutdown", async () => {
     clearInterval(timer);
     timer = undefined;
     activeCtx = null;
+  });
+
+  // ── Model rate chip — updates on every model change ──────────────────────
+  pi.on("model_select", async (event, ctx) => {
+    if (ctx.mode !== "tui") return;
+    const settings = loadSettings();
+    if (!settings.enabled) return;
+
+    const chip = buildModelRateChip(event.model.id, ctx.ui.theme);
+    ctx.ui.setStatus(MODEL_RATES_STATUS_KEY, chip ?? undefined);
   });
 
   pi.registerCommand("copilot-usage", {
@@ -583,7 +619,7 @@ export default function (pi: ExtensionAPI) {
             }
             if (id === "enabled") {
               settings.enabled = newValue === "on";
-              if (!settings.enabled) { ctx.ui.setStatus(STATUS_KEY, undefined); clearInterval(timer); timer = undefined; }
+              if (!settings.enabled) { ctx.ui.setStatus(STATUS_KEY, undefined); ctx.ui.setStatus(MODEL_RATES_STATUS_KEY, undefined); clearInterval(timer); timer = undefined; }
               else { ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", "🤖 …")); activeCtx = ctx; void doFetch(); startTimer(settings); }
             }
             if (id === "clearGithubTokenEnv") settings.clearGithubTokenEnv = newValue === "on";
