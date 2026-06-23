@@ -1,20 +1,21 @@
 /**
- * Custom Footer Extension
+ * Custom Footer Extension (@guneriu/pi-footer)
  *
- * Replaces pi's default footer with a single-line layout:
- *   LEFT:  ↑input  ↓output  💾CH%  context%/window  🤖copilot-quota
- *   RIGHT: thinking-emoji level · model-name  (both colored by thinking level)
+ * Replaces pi's default footer with a two-line layout:
+ *   LINE 1: path (branch) · session-name
+ *   LINE 2: ↑input ↓output 💾CH%  [ctx-bar] ctx%/window  $cost [↳$sub]  🤖quota  model · 🧠level
  *
- * The copilot quota is read from the copilot-quota extension's setStatus chip,
- * so copilot-quota.ts must be installed for that section to appear.
+ * Cost display: reads usage.cost.total directly from pi session data (accurate,
+ * includes all token types — input, output, cacheRead, cacheWrite/thinking).
+ * Credit-format conversion and subagent breakdown (↳) provided by co-installed
+ * @guneriu/pi-copilot-quota extension.
  *
- * Cost calculation: For github-copilot provider, uses Copilot's credit-based rates.
- * For other providers, uses pi-ai's standard rates.
+ * Thinking level indicators: 💭 min · 🤔 low · 🧠 med · 🔥 high · ⚡ max
  *
  * Commands:
- *   /custom-footer       — toggle on/off (restores pi's default footer when off)
+ *   /custom-footer  — toggle enhanced footer on/off (restores pi's default when off)
  *
- * Settings: ~/.pi/agent/extensions/custom-footer-settings.json
+ * Settings: <agentDir>/extensions/pi-footer/settings.json
  */
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
