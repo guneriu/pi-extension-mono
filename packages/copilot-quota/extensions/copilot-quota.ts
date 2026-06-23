@@ -420,48 +420,6 @@ function buildChipText(data: QuotaData, settings: Settings, theme: Theme): strin
 
 // ─── Extension ────────────────────────────────────────────────────────────────
 
-// ─── Provider cost patch ──────────────────────────────────────────────────────
-
-/**
- * Patch the github-copilot provider models with Copilot credit rates so pi's
- * built-in /model picker shows credit costs rather than raw Anthropic dollar rates.
- *
- * Cost field unit: $/token  (credits/M × 1e-8 = $/token)
- * Models with no rate match keep their original cost (never removed from picker).
- */
-async function patchGithubCopilotRates(piApi: ExtensionAPI, ctx: any): Promise<void> {
-  const allModels: any[] = ctx.modelRegistry.getAll();
-  const copilotModels = allModels.filter((m: any) => m.provider === "github-copilot");
-  if (copilotModels.length === 0) return;
-
-  const toPerToken = (crPerM: number): number => crPerM * 1e-8;
-
-  const patchedModels = copilotModels.map((m: any) => {
-    const rates = getCopilotRates(m.id);
-    return {
-      id:               m.id,
-      name:             m.name,
-      api:              m.api,
-      baseUrl:          m.baseUrl,
-      reasoning:        m.reasoning ?? false,
-      thinkingLevelMap: m.thinkingLevelMap,
-      input:            m.input ?? ["text"],
-      contextWindow:    m.contextWindow ?? 200_000,
-      maxTokens:        m.maxTokens ?? 16_384,
-      headers:          m.headers,
-      compat:           m.compat,
-      cost: rates ? {
-        input:      toPerToken(rates.input),
-        output:     toPerToken(rates.output),
-        cacheRead:  toPerToken(rates.cached),
-        cacheWrite: toPerToken(rates.cacheWrite ?? rates.cached),
-      } : m.cost,
-    };
-  });
-
-  piApi.registerProvider("github-copilot", { models: patchedModels });
-}
-
 export default function (pi: ExtensionAPI) {
   let timer: ReturnType<typeof setInterval> | undefined;
   let lastData: QuotaData | null = null;
@@ -522,8 +480,6 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", "🤖 …"));
     void doFetch();
     startTimer(settings);
-    // Patch /model picker to show Copilot credit rates
-    void patchGithubCopilotRates(pi, ctx);
   });
 
   pi.on("session_shutdown", async () => {
@@ -623,8 +579,6 @@ export default function (pi: ExtensionAPI) {
                 .then(({ count, updatedAt }) => {
                   const date = new Date(updatedAt).toLocaleDateString();
                   ctx.ui.notify(`✅ Rates updated: ${count} models (${date})`, "info");
-                  // Re-patch the /model picker with freshly fetched rates
-                  if (activeCtx) void patchGithubCopilotRates(pi, activeCtx);
                 })
                 .catch((err: Error) => {
                   ctx.ui.notify(`❌ Failed to fetch rates: ${err.message}`, "error");
@@ -677,4 +631,60 @@ export default function (pi: ExtensionAPI) {
       }
     },
   });
+  // ── /copilot-rates command ─────────────────────────────────────────────────────────────────
+
+  pi.registerCommand("copilot-rates", {
+    description: "Show Copilot credit rates per model (from GitHub official pricing)",
+    handler: async (_args, ctx) => {
+      if (ctx.mode !== "tui") {
+        ctx.ui.notify("/copilot-rates requires TUI mode", "error");
+        return;
+      }
+
+      const theme = ctx.ui.theme;
+      const rates = loadCopilotRates();
+      const updatedAt = getRatesUpdatedAt();
+      const fmtCr = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
+
+      const currentModelId = (ctx.model as any)?.id ?? (ctx.model as any)?.name ?? "";
+
+      let out = "\n";
+      out += theme.fg("accent", "  Copilot Credit Rates") + "  ";
+      out += theme.fg("dim", updatedAt
+        ? `(fetched ${new Date(updatedAt).toLocaleDateString()})`
+        : "(hardcoded fallback — run /copilot-usage → Refresh rates)") + "\n";
+      out += theme.fg("dim", "  1 credit = $0.01  ·  rates per 1M tokens\n");
+      out += "\n";
+
+      // Header
+      const col1 = 26, col2 = 10, col3 = 10, col4 = 10;
+      out += theme.fg("dim",
+        "  Model".padEnd(col1) +
+        "Input".padStart(col2) +
+        "Cached".padStart(col3) +
+        "Output".padStart(col4) + "\n"
+      );
+      out += theme.fg("dim", "  " + "─".repeat(col1 + col2 + col3 + col4 - 2) + "\n");
+
+      // Sort by input rate (cheapest first)
+      const sorted = Object.entries(rates).sort(([, a], [, b]) => a.input - b.input);
+
+      for (const [key, r] of sorted) {
+        const isCurrent = currentModelId.startsWith(key) || key === currentModelId;
+        const prefix = isCurrent ? theme.fg("success", "▶ ") : "  ";
+        const nameCol = (isCurrent ? key + " ← current" : key).padEnd(col1 - 2);
+        const name = isCurrent ? theme.fg("success", nameCol) : theme.fg("muted", nameCol);
+        const inp    = theme.fg("dim", `${fmtCr(r.input)} cr`.padStart(col2));
+        const cached = theme.fg("dim", `${fmtCr(r.cached)} cr`.padStart(col3));
+        const outp   = theme.fg("dim", `${fmtCr(r.output)} cr`.padStart(col4));
+        out += prefix + name + inp + cached + outp + "\n";
+      }
+
+      out += "\n";
+      out += theme.fg("dim", "  Tip: run /copilot-usage → Refresh rates to fetch latest from GitHub\n");
+
+      ctx.ui.notify(out, "info");
+    },
+  });
+
 }
