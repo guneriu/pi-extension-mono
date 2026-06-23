@@ -1,27 +1,48 @@
 # @guneriu/pi-footer
 
-Enhanced two-line footer for [pi coding agent](https://pi.dev).
+Enhanced footer for [pi coding agent](https://pi.dev) — replaces pi's default one-liner with a richer two-line layout.
 
-## Layout
+## What it shows
 
 ```
-~/path/to/project  (main) · session-name
-↑1.3k ↓32k  💾CH84.1%  [████░░] 26.9%/200k  $0.110 ↳ $0.035  🤖 29.9k/50k  claude-sonnet-4.5 · 🧠 med
+~/path/to/project  🌿 branch  [session-name]
+↑1.3k ↓32k 💾CH84.1%  [████░░] 26.9%/200k  $0.110 ↳ $0.035  🤖 29.9k/50k  claude-sonnet-4.6 · 🧠med
 ```
 
-**Line 1:** current working directory · git branch · session name  
-**Line 2:** token counts · cache hit % · context window bar · Copilot cost · quota chip · model · thinking level
+| Element | Description |
+|---------|-------------|
+| `~/path` | Current working directory (shortened) |
+| `🌿 branch` | Git branch (or detached/no-git) |
+| `[session-name]` | Pi session name (if set) |
+| `↑input ↓output` | Token counts for the session |
+| `💾 CH84.1%` | Cache hit percentage |
+| `[████░░] 26.9%/200k` | Context window usage bar |
+| `$0.110 ↳ $0.035` | Copilot session cost (parent ↳ subagent) |
+| `🤖 29.9k/50k` | Copilot quota chip (from `@guneriu/pi-copilot-quota`) |
+| `model · 🧠level` | Current model and thinking level |
+
+### Thinking level indicators
+
+| Level | Icon |
+|-------|------|
+| off | (none) |
+| minimal | 💭 |
+| low | 🤔 |
+| medium | 🧠 |
+| high | 🔥 |
+| max | ⚡ |
 
 ## Install
 
 ```bash
+# From GitHub (includes all three extensions):
 pi install git:github.com/guneriu/pi-extension-mono
-# or when published to npm:
+
+# When published to npm:
 pi install npm:@guneriu/pi-footer
 ```
 
-> **Requires** `@guneriu/pi-copilot-quota` for cost display and quota chip.  
-> If not installed, those sections are simply absent from the footer.
+> **Requires** `@guneriu/pi-copilot-quota` for cost and quota display. Installed automatically with the mono-repo.
 
 ## Commands
 
@@ -29,50 +50,21 @@ pi install npm:@guneriu/pi-footer
 |---------|-------------|
 | `/custom-footer` | Toggle enhanced footer on/off (restores pi's default when off) |
 
-## Footer sections explained
+## Cost display
 
-| Section | Example | Description |
-|---------|---------|-------------|
-| Tokens | `↑1.3k ↓32k` | Total input ↑ and output ↓ tokens this session |
-| Cache hit | `💾 CH84.1%` | `cacheRead / (input + cacheRead + cacheWrite) × 100` |
-| Context bar | `[████░░] 26.9%/200k` | Context window usage with visual bar |
-| Cost | `$0.110` | Session cost from `usage.cost.total` (accurate, includes thinking tokens) |
-| Subagent cost | `↳ $0.035` | Additional cost from subagents (pi built-in tool only) |
-| Quota | `🤖 29.9k/50k` | From `@guneriu/pi-copilot-quota` chip |
-| Model | `claude-sonnet-4.5` | Currently active model |
-| Thinking | `🧠 med` | Thinking level indicator |
+Cost reads `usage.cost.total` from pi's session data — the same accurate number pi already tracks. The extension adds:
+- **Credit-format conversion** (`$0.110` → `11 cr`) via `@guneriu/pi-copilot-quota` settings
+- **Subagent cost breakdown** (`$0.110 ↳ $0.035`) — parent session ↳ subagent total
 
-### Thinking level indicators
+Without `@guneriu/pi-copilot-quota` installed: cost and quota sections are hidden.
 
-| Level | Display | Color |
-|-------|---------|-------|
-| minimal | 💭 min | muted |
-| low | 🤔 low | dim |
-| medium | 🧠 med | accent |
-| high | 🔥 high | warning |
-| xhigh | ⚡ max | error |
+## Settings file
 
-Models without reasoning support show the model name only (no thinking indicator).
+`<agentDir>/extensions/pi-footer/settings.json`
 
-## Cost display format
-
+```json
+{ "enabled": true }
 ```
-$0.110          ← parent session only
-$0.110 ↳ $0.035 ← parent + subagent breakdown
-11 cr           ← credits format (toggle in /copilot-usage)
-11 cr ↳ 3 cr   ← credits with subagent
-```
-
-Cost reads `usage.cost.total` directly from pi's session data — accurate, includes
-all token types (input, output, cacheRead, cacheWrite/thinking). Not a manual rate calculation.
-
-## Settings
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `enabled` | `true` | On/off (also toggled by `/custom-footer` command) |
-
-Settings file: `<agentDir>/extensions/pi-footer/settings.json`
 
 ## License
 

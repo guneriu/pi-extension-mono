@@ -288,13 +288,12 @@ export function getCopilotRates(modelId: string): CopilotRates | undefined {
   return best;
 }
 
-/**
- * Calculate cost for a single message using Copilot credit rates.
+/** Calculate cost for a single message using Copilot credit rates.
  * Used ONLY for the model-selector chip (future feature) where
  * we need to estimate cost by model name before any usage data exists.
  * For actual session/subagent cost, use usage.cost.total directly.
  */
-export function copilotMsgCost(
+function copilotMsgCost(
   usage: { input: number; output: number; cacheRead: number },
   rates: CopilotRates,
 ): number {

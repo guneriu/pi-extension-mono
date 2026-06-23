@@ -2,79 +2,93 @@
 
 GitHub Copilot AI credit usage chip and cost tracking for [pi coding agent](https://pi.dev).
 
-Shows your Copilot quota in the footer, tracks session and subagent costs using pi's official Copilot billing rates, and provides a `/copilot-rates` table for per-model credit pricing.
+> ⚠️ **Uses an undocumented internal GitHub API** (`copilot_internal/user`). This endpoint has no stability guarantee and may change without notice.
 
-> ⚠️ **Uses an undocumented internal GitHub API** (`copilot_internal/user`). This endpoint has no stability guarantee and may change or be removed without notice.
+## What it does
+
+- **🤖 Quota chip** — shows remaining Copilot credits in the footer (`29.9k/50k`)
+- **💰 Session cost** — tracks Copilot credit spend for the current session (`$0.110`)
+- **↳ Subagent cost** — shows subagent credit spend alongside parent (`$0.110 ↳ $0.035`)
+- **💳 `/copilot-rates`** — table of all model credit rates, highlights current model
+- **↺ Refresh rates** — fetches latest rates from GitHub's official pricing YAML
 
 ## Install
 
 ```bash
-# All extensions together (recommended):
+# From GitHub (includes all three extensions):
 pi install git:github.com/guneriu/pi-extension-mono
 
-# npm (once published):
+# When published to npm:
 pi install npm:@guneriu/pi-copilot-quota
 ```
+
+## Requirements
+
+- [`gh` CLI](https://cli.github.com) authenticated to your GitHub host
+- GitHub Copilot subscription
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | `/copilot-usage` | Open settings dialog |
-| `/copilot-rates` | Show credit rates table for all models |
+| `/copilot-rates` | Show credit rates per model |
 
-### `/copilot-usage` settings
+## Settings (`/copilot-usage`)
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `enabled` | `true` | Show/hide the quota chip and cost tracking |
-| `GitHub host` | `github.com` | Your GitHub host. Use `Set GitHub host…` to type a custom GHE hostname |
-| `Clear GITHUB_TOKEN` | `off` | Set to `on` if GHE auth fails (GITHUB_TOKEN env var conflict) |
-| `Show metric` | `remaining` | Quota chip display: `remaining`, `used`, `percent`, `remaining+percent` |
-| `Refresh every` | `10 min` | How often to refresh the quota chip |
-| `Cost format` | `money` | Display cost as `$0.110` (money) or `11 cr` (credits) |
+| `enabled` | `true` | Show/hide the quota chip and cost display |
+| `GitHub host` | `github.com` | Your GitHub host. Change via "⌨ Set GitHub host…" action |
+| `Clear GITHUB_TOKEN` | `off` | Enable if GHE auth fails due to `GITHUB_TOKEN` env conflict |
+| `Show metric` | `remaining` | Quota chip format: `remaining`, `used`, `percent`, `remaining+percent` |
+| `Refresh every` | `10 min` | How often to poll the quota API |
+| `Cost format` | `money` | Display costs as `money` ($0.110) or `credits` (11 cr) |
 | `↺ Refresh quota now` | — | Force-refresh the quota chip immediately |
-| `↺ Refresh rates from GitHub` | — | Fetch latest model credit rates from GitHub's official pricing YAML |
+| `↺ Refresh rates from GitHub` | — | Fetch latest model credit rates from GitHub docs |
 
-### `/copilot-rates` output
-
-```
-  Copilot Credit Rates  (fetched 6/23/2026)
-  1 credit = $0.01  ·  rates per 1M tokens
-
-  Model                    Input    Cached    Output
-  ─────────────────────────────────────────────────
-  gpt-5-mini                  25 cr    2 cr    200 cr
-▶ claude-sonnet-4.5          300 cr   30 cr  1,500 cr  ← current model
-  claude-opus-4.6            500 cr   50 cr  2,500 cr
-```
-
-## Footer integration
-
-When used with `@guneriu/pi-footer`, the footer shows:
+## Cost display formats
 
 ```
-$0.110 ↳ $0.035   🤖 29.9k/50.0k
-  ↑ session cost   ↑ subagent   ↑ quota remaining
+Money (default):   $0.110 ↳ $0.035
+Credits:           11 cr ↳ 3 cr
+No subagents:      $0.110
+Disabled:          (hidden)
 ```
 
-- `$0.110` = parent session Copilot cost (from `usage.cost.total`, accurate)
-- `↳ $0.035` = subagent costs (pi's built-in `subagent` tool only)
-- `🤖 29.9k/50.0k` = credits remaining from your monthly quota
+## How cost is calculated
 
-## Cost calculation
+Session cost reads `usage.cost.total` directly from pi's session data — pi registers official GitHub Copilot rates for the `github-copilot` provider, so this is always accurate. It includes:
+- Input tokens
+- Output tokens
+- Cache reads (at 10% of input rate)
+- **Cache writes (thinking tokens)** — e.g. 97% of cost when extended thinking is active
 
-Costs use `usage.cost.total` directly from pi's session data. Pi registers the official GitHub Copilot rates, so this is always accurate and includes all token types: input, output, cache reads, and **cache writes (thinking tokens)**.
+**1 AI credit = $0.01 USD** (official GitHub definition).
 
-Subagent costs are read from `toolResult.details.results[].usage.cost` in the parent session branch — this works even with ephemeral subagents (`--no-session`).
+Subagent cost reads from `toolResult.details.results[].usage.cost` (scalar) in the parent session — works even with `--no-session` subagents.
 
-> **Limitation:** Subagent cost tracking only works with pi's built-in `subagent` tool.  
-> Third-party subagent extensions (`@tintinweb/pi-subagents`, `pi-crew`, etc.) use different tool names and are not counted.
+> ⚠️ Only pi's built-in `subagent` tool is tracked. Third-party subagent extensions (`@tintinweb/pi-subagents`, `pi-crew`, etc.) use different tool names and will show $0.
 
-## Requirements
+## Credit rates (`/copilot-rates`)
 
-- [`gh` CLI](https://cli.github.com) authenticated to your GitHub host
-- GitHub Copilot subscription (for quota chip)
+Rates are fetched from [GitHub's official pricing YAML](https://github.com/github/docs/blob/main/data/tables/copilot/models-and-pricing.yml) via "Refresh rates". A hardcoded fallback is used until the first fetch.
+
+Use `/copilot-usage` → "↺ Refresh rates from GitHub" to update.
+
+## GHE setup
+
+For GitHub Enterprise users:
+
+1. Open `/copilot-usage`
+2. Select "⌨ Set GitHub host…" → enter your GHE hostname (e.g. `ghe.mycompany.com`)
+3. If the quota chip shows an auth error, enable "Clear GITHUB_TOKEN" → `on`
+
+The `Clear GITHUB_TOKEN` setting is needed when your shell has `GITHUB_TOKEN` set to a `github.com` token that overrides the GHE keyring token.
+
+## Settings file
+
+`<agentDir>/extensions/pi-copilot-quota/settings.json`
 
 ## License
 
