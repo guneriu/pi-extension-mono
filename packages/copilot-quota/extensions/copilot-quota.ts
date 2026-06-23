@@ -388,6 +388,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       const settings = loadSettings();
+      let openHostInput = false;
 
       await ctx.ui.custom((tui, theme, _kb, done) => {
         const items: SettingItem[] = [
@@ -401,7 +402,13 @@ export default function (pi: ExtensionAPI) {
             id: "githubHost",
             label: "GitHub host",
             currentValue: settings.githubHost,
-            values: ["github.com", settings.githubHost !== "github.com" ? settings.githubHost : "custom…"].filter((v, i, a) => a.indexOf(v) === i),
+            values: [settings.githubHost],   // display-only — use action row below to change
+          },
+          {
+            id: "set-host",
+            label: "  ⌨  Set GitHub host…",
+            currentValue: "",
+            values: [""],
           },
           {
             id: "clearGithubTokenEnv",
@@ -445,12 +452,17 @@ export default function (pi: ExtensionAPI) {
           getSettingsListTheme(),
           (id, newValue) => {
             if (id === "refresh-now") { void doFetch(); ctx.ui.notify("Refreshing quota…", "info"); return; }
+            if (id === "set-host") {
+              // Close dialog first, then open input prompt
+              openHostInput = true;
+              done(undefined);
+              return;
+            }
             if (id === "enabled") {
               settings.enabled = newValue === "on";
               if (!settings.enabled) { ctx.ui.setStatus(STATUS_KEY, undefined); clearInterval(timer); timer = undefined; }
               else { ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", "🤖 …")); activeCtx = ctx; void doFetch(); startTimer(settings); }
             }
-            if (id === "githubHost" && newValue !== "custom…") settings.githubHost = newValue;
             if (id === "clearGithubTokenEnv") settings.clearGithubTokenEnv = newValue === "on";
             if (id === "metric") { settings.metric = newValue as Settings["metric"]; if (settings.enabled && lastData) ctx.ui.setStatus(STATUS_KEY, buildChipText(lastData, settings, ctx.ui.theme)); }
             if (id === "refreshEvery") { settings.refreshEvery = parseInt(newValue) as Settings["refreshEvery"]; if (settings.enabled) startTimer(settings); }
@@ -471,6 +483,19 @@ export default function (pi: ExtensionAPI) {
           handleInput: (data: string) => { list.handleInput?.(data); tui.requestRender(); },
         };
       });
+
+      // After dialog closes: if user pressed "Set GitHub host…", open input prompt
+      if (openHostInput) {
+        const entered = await ctx.ui.input(
+          "GitHub host:",
+          settings.githubHost,   // pre-filled with current value
+        );
+        if (entered && entered.trim()) {
+          settings.githubHost = entered.trim();
+          saveSettings(settings);
+          ctx.ui.notify(`GitHub host set to: ${settings.githubHost}`, "info");
+        }
+      }
     },
   });
 }
