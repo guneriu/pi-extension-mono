@@ -13,7 +13,8 @@
     "extensions": [
       "./packages/copilot-quota/extensions",
       "./packages/pi-footer/extensions",
-      "./packages/session-files/extensions"
+      "./packages/session-files/extensions",
+      "./packages/keybindings-help/extensions"
     ]
   },
   "peerDependencies": {

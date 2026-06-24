@@ -60,7 +60,7 @@ const LEFT_SECTIONS: KbSection[] = [
       { key: "enter",              desc: "submit" },
       { key: "shift+↵ / ctrl+j",  desc: "new line" },
       { key: "tab",                desc: "autocomplete" },
-      { key: "ctrl+c",             desc: "copy selection" },
+      { key: "ctrl+c (select)",    desc: "copy selection" },
     ],
   },
 ];
@@ -240,12 +240,14 @@ class HelpEditor extends CustomEditor {
     }
 
     // Track whether editor is empty
-    //   submit / ctrl+c (clear) / ctrl+u (del to line start) → empty
-    //   any printable char → not empty
-    //   backspace on already-empty → stays empty
-    if (data === "\r" || data === "\n" || data === "\x03" || data === "\x15") {
+    //   \r = submit, \x03 = ctrl+c (clear) → truly empty
+    //   \n = ctrl+j = new line (NOT submit) → do NOT mark empty
+    //   \x15 = ctrl+u = del-to-line-start → unknown (other lines may exist), leave as-is
+    //   multi-char data = paste → non-empty
+    //   single printable char → non-empty
+    if (data === "\r" || data === "\x03") {
       this._empty = true;
-    } else if (data.length === 1 && data.charCodeAt(0) >= 0x20) {
+    } else if (data.length > 1 || (data.length === 1 && data.charCodeAt(0) >= 0x20)) {
       this._empty = false;
     }
 
