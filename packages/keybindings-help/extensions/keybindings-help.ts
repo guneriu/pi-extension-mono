@@ -227,8 +227,8 @@ class HelpEditor extends CustomEditor {
   private _ctx: any;
   private _empty = true;
 
-  constructor(theme: any, keybindings: any, ctx: any) {
-    super(theme, keybindings);
+  constructor(tui: any, theme: any, keybindings: any, ctx: any) {
+    super(tui, theme, keybindings); // tui must be first — same as ModalEditor example
     this._ctx = ctx;
   }
 
@@ -258,7 +258,7 @@ class HelpEditor extends CustomEditor {
 export default function (pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     ctx.ui.setEditorComponent((tui, theme, keybindings) =>
-      new HelpEditor(theme, keybindings, ctx),
+      new HelpEditor(tui, theme, keybindings, ctx),
     );
   });
 }
