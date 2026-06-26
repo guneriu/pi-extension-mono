@@ -6,12 +6,17 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { matchesKey, Key, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import {
+  ancestorsOf,
+  buildTree,
   buildWidgetLines,
   classifyEdit,
   extractEditsFromBranch,
+  flattenVisible,
+  listProjectFiles,
   statusGlyph,
   type EditStatus,
   type EditedFile,
@@ -155,6 +160,135 @@ export default function (pi: ExtensionAPI) {
   registerTreeCommands(pi, edited);
 }
 
-// Stub replaced by the real interactive tree in Task 8. Keeping it here lets
-// this file compile and be committed on its own (S5).
-function registerTreeCommands(_pi: ExtensionAPI, _edited: Map<string, EditStatus>) {}
+function registerTreeCommands(pi: ExtensionAPI, edited: Map<string, EditStatus>) {
+  const open = async (ctx: any) => {
+    if (ctx.mode !== "tui") {
+      ctx.ui.notify("/agent-files requires TUI mode", "error");
+      return;
+    }
+    const cwd = ctx.sessionManager.getCwd();
+    const root = buildTree(listProjectFiles(cwd));
+
+    // Edited files as cwd-relative posix paths for highlight + auto-expand.
+    const toRel = (abs: string) => relative(cwd, abs).split("\\").join("/");
+    const editedStatus = new Map<string, EditStatus>();
+    for (const [abs, status] of edited.entries()) editedStatus.set(toRel(abs), status);
+
+    const expanded = new Set<string>();
+    for (const rel of editedStatus.keys()) {
+      for (const dir of ancestorsOf(rel)) expanded.add(dir);
+    }
+
+    let selected = 0;
+    let scroll = 0;
+
+    await ctx.ui.custom(
+      (tui: any, theme: any, _kb: any, done: (v: null) => void) => {
+        const B = (s: string) => theme.fg("border", s);
+
+        // C2: derive body height from the terminal so the box stays close to the
+        // 80% maxHeight (degenerate <~6-row terminals keep a 1-row minimum).
+        const visibleBody = (): number => {
+          const max = Math.max(1, Math.floor(tui.terminal.rows * 0.8) - 4);
+          const total = flattenVisible(root, expanded).length || 1;
+          return Math.min(max, total);
+        };
+
+        const buildBody = (innerW: number, bodyH: number): string[] => {
+          const rows = flattenVisible(root, expanded);
+          if (selected >= rows.length) selected = rows.length - 1;
+          if (selected < 0) selected = 0;
+          if (selected < scroll) scroll = selected;
+          if (selected >= scroll + bodyH) scroll = selected - bodyH + 1;
+          if (scroll < 0) scroll = 0;
+
+          return rows.slice(scroll, scroll + bodyH).map((n, i) => {
+            const idx = scroll + i;
+            const indent = "  ".repeat(n.depth);
+            const caret = n.isDir ? (expanded.has(n.path) ? "▾ " : "▸ ") : "  ";
+            const status = !n.isDir ? editedStatus.get(n.path) : undefined;
+
+            // S4: raw + styled share identical glyph prefixes so widths match.
+            const namePlain = status ? `${statusGlyph(status)} ${n.name}` : n.name;
+            const nameStyled = status
+              ? theme.fg(status === "new" ? "success" : "warning", namePlain)
+              : n.isDir
+                ? theme.fg("accent", n.name)
+                : theme.fg("muted", n.name);
+
+            // S3: reserve a 1-col cursor gutter; row content starts at column 2,
+            // so the selection marker never overwrites the caret/glyph.
+            const gutter = idx === selected ? theme.fg("accent", "›") : " ";
+            const contentPlain = ` ${indent}${caret}${namePlain}`;
+            const contentStyled = ` ${indent}${caret}${nameStyled}`;
+            const pad = " ".repeat(Math.max(0, innerW - 1 - visibleWidth(contentPlain)));
+            return gutter + contentStyled + pad;
+          });
+        };
+
+        const build = (width: number): string[] => {
+          const innerW = width - 2;
+          const bodyH = visibleBody();
+          const H = "─";
+          const lines: string[] = [];
+          lines.push(B("╭" + H.repeat(innerW) + "╮"));
+          const title = " 📁 Project files";
+          const hint = "↑↓ move  → expand  ← collapse  esc close ";
+          const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(hint));
+          lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) +
+            theme.fg("dim", hint) + B("│"));
+          lines.push(B("├" + H.repeat(innerW) + "┤"));
+          // Pad every cell to exactly innerW visible cols AFTER truncation so the
+          // right border stays aligned for short, exact, and over-long rows.
+          const body = buildBody(innerW, bodyH);
+          const rowsOut = body.length ? body : [theme.fg("dim", " (no files)")];
+          for (const row of rowsOut) {
+            const cell = truncateToWidth(row, innerW);
+            lines.push(B("│") + cell + " ".repeat(Math.max(0, innerW - visibleWidth(cell))) + B("│"));
+          }
+          lines.push(B("╰" + H.repeat(innerW) + "╯"));
+          return lines;
+        };
+
+        return {
+          render: (w: number) => build(w),
+          invalidate: () => {},
+          handleInput: (data: string) => {
+            const rows = flattenVisible(root, expanded);
+            if (matchesKey(data, Key.escape) || data === "q") return done(null);
+            if (rows.length === 0) return; // nothing to navigate (empty tree)
+            if (matchesKey(data, Key.up)) { selected = Math.max(0, selected - 1); tui.requestRender(); return; }
+            if (matchesKey(data, Key.down)) { selected = Math.min(rows.length - 1, selected + 1); tui.requestRender(); return; }
+            const node = rows[selected];
+            if (!node) return;
+            if (matchesKey(data, Key.right) || data === "\r") {
+              if (node.isDir) { expanded.add(node.path); tui.requestRender(); }
+              return;
+            }
+            if (matchesKey(data, Key.left)) {
+              if (node.isDir && expanded.has(node.path)) {
+                expanded.delete(node.path);
+              } else {
+                const parents = ancestorsOf(node.path);
+                const parent = parents[parents.length - 1];
+                if (parent) {
+                  const pIdx = flattenVisible(root, expanded).findIndex((n) => n.path === parent);
+                  if (pIdx >= 0) selected = pIdx;
+                }
+              }
+              tui.requestRender();
+              return;
+            }
+          },
+        };
+      },
+      {
+        overlay: true,
+        overlayOptions: { width: "80%", maxWidth: 100, minWidth: 50, maxHeight: "80%", anchor: "center" },
+      },
+    );
+  };
+
+  pi.registerCommand("agent-files", { description: "Browse the project file tree (agent edits highlighted)", handler: (_a, ctx) => open(ctx) });
+  pi.registerCommand("files", { description: "Alias for /agent-files", handler: (_a, ctx) => open(ctx) });
+}
