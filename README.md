@@ -9,6 +9,7 @@ Pi coding agent extensions by [guneriu](https://github.com/guneriu).
 | [`@guneriu/pi-copilot-quota`](./packages/copilot-quota) | `pi install npm:@guneriu/pi-copilot-quota` | GitHub Copilot quota chip, session cost, `/copilot-rates` |
 | [`@guneriu/pi-footer`](./packages/pi-footer) | `pi install npm:@guneriu/pi-footer` | Enhanced footer (requires pi-copilot-quota) |
 | [`@guneriu/pi-session-files`](./packages/session-files) | `pi install npm:@guneriu/pi-session-files` | Track context, read, and modified files |
+| [`@guneriu/pi-agent-files`](./packages/agent-files) | `pi install npm:@guneriu/pi-agent-files` | Agent-edited files widget + interactive project tree (`/agent-files`, `/files`) |
 
 ## Quick install (all three)
 

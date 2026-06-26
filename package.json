@@ -14,7 +14,8 @@
       "./packages/copilot-quota/extensions",
       "./packages/pi-footer/extensions",
       "./packages/session-files/extensions",
-      "./packages/keybindings-help/extensions"
+      "./packages/keybindings-help/extensions",
+      "./packages/agent-files/extensions"
     ]
   },
   "peerDependencies": {
