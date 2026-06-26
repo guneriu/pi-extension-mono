@@ -10,8 +10,10 @@ input bar, and opens an interactive, gitignore-aware project tree on demand.
 - **Idle hint** when nothing is edited yet (toggle off in settings).
 - **`/agent-files`** (alias **`/files`**) — full-screen tree overlay with
   keyboard navigation; auto-expands to your edited files on open.
+  - **`Enter`** on a file opens it in your OS default app (macOS, Linux, Windows).
+  - **`p`** on a file opens a scrollable, syntax-highlighted in-TUI preview.
 - **`/agent-files-settings`** — interactive settings menu to toggle the widget,
-  collapse it for the session, adjust row cap, and more.
+  collapse it for the session, adjust row cap, set the peek size limit, and more.
 - Respects `.gitignore` via `git ls-files`; falls back to a filesystem walk
   outside git repos.
 
