@@ -38,9 +38,23 @@ pi install git:github.com/guneriu/pi-extension-mono
 | Key | Action |
 |---|---|
 | `↑` / `↓` | Move selection |
-| `→` or `Enter` | Expand a directory |
+| `Enter` | **Open the file in your OS default app** (expands a directory) |
+| `p` | **Peek: in-TUI syntax-highlighted preview** (files only) |
+| `→` | Expand a directory |
 | `←` | Collapse a directory — or jump to its parent if already collapsed |
 | `Esc` or `q` | Close the overlay |
+
+### Opening files
+
+- **`Enter`** launches the file with your operating system's default
+  application (`open` on macOS, `xdg-open` on Linux, `start` on Windows). On a
+  headless/SSH box with no GUI handler you'll get a notification instead.
+- **`p`** opens a scrollable, syntax-highlighted preview *inside* pi — no need to
+  leave the terminal. Scroll with `↑/↓`, page with `PgUp/PgDn`, jump with `g`/`G`,
+  close with `Esc`/`q`.
+  - Files larger than **Max peek size** (default 512 KB) are refused with a hint
+    to open them externally instead.
+  - Binary files are detected and refused (open them externally).
 
 ### Inside the settings menu (`/agent-files-settings`)
 
@@ -48,7 +62,7 @@ pi install git:github.com/guneriu/pi-extension-mono
 |---|---|
 | `↑` / `↓` | Move between items |
 | `Space` or `Enter` | Toggle a boolean setting |
-| `←` / `→` | Decrease / increase **Max widget rows** (1–20) |
+| `←` / `→` | Decrease / increase **Max widget rows** (1–20) and **Max peek size** (64–8192 KB) |
 | `Esc` or `q` | Close the menu |
 
 ## Settings
@@ -61,6 +75,10 @@ Settings can be changed interactively via `/agent-files-settings` or by editing
 | `enabled` | `true` | Master on/off for the widget | ✅ yes |
 | `maxWidgetRows` | `6` | Max file rows shown in the compact widget | ✅ yes |
 | `showIdleHint` | `true` | Show a one-line hint when no files have been edited yet | ✅ yes |
+| `maxPeekBytes` | `524288` | Largest file (bytes) the in-TUI peek will render | ✅ yes |
+
+In the settings menu, **Max peek size (KB)** is adjusted with `←/→` in 64 KB
+steps (range 64 KB–8 MB).
 
 ### Session collapse
 

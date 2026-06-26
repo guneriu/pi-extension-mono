@@ -7,16 +7,21 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Key, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, relative, resolve } from "node:path";
 import {
   ancestorsOf,
+  buildOpenCommand,
   buildTree,
   buildWidgetLines,
   classifyEdit,
+  detectLanguageFromPath,
   extractEditsFromBranch,
   flattenVisible,
+  isPreviewable,
   listProjectFiles,
+  looksBinary,
   statusGlyph,
   type EditStatus,
   type EditedFile,
@@ -27,8 +32,14 @@ interface Settings {
   enabled: boolean;
   maxWidgetRows: number;
   showIdleHint: boolean;
+  maxPeekBytes: number;
 }
-const DEFAULTS: Settings = { enabled: true, maxWidgetRows: 6, showIdleHint: true };
+const DEFAULTS: Settings = {
+  enabled: true,
+  maxWidgetRows: 6,
+  showIdleHint: true,
+  maxPeekBytes: 524288, // 512 KB
+};
 
 function getSettingsFile(): string {
   const dir = `${getAgentDir()}/extensions/pi-agent-files`;
@@ -174,7 +185,7 @@ export default function (pi: ExtensionAPI) {
     renderWidget(ctx);
   });
 
-  registerTreeCommands(pi, edited);
+  registerTreeCommands(pi, edited, () => settings);
   registerSettingsCommand(
     pi,
     () => settings,
@@ -251,6 +262,19 @@ function registerSettingsCommand(
           hint: "persists across sessions",
           get: () => getSettings().showIdleHint,
           toggle: () => updateSettings((s) => { s.showIdleHint = !s.showIdleHint; }, ctx),
+        },
+        {
+          kind: "number",
+          label: "Max peek size (KB)",
+          get: () => Math.round(getSettings().maxPeekBytes / 1024),
+          inc: () => updateSettings((s) => {
+            s.maxPeekBytes = Math.min(8192 * 1024, s.maxPeekBytes + 64 * 1024);
+          }, ctx),
+          dec: () => updateSettings((s) => {
+            s.maxPeekBytes = Math.max(64 * 1024, s.maxPeekBytes - 64 * 1024);
+          }, ctx),
+          min: 64,
+          max: 8192,
         },
       ];
 
@@ -347,7 +371,134 @@ function registerSettingsCommand(
 
 // ─── Project tree ─────────────────────────────────────────────────────────────
 
-function registerTreeCommands(pi: ExtensionAPI, edited: Map<string, EditStatus>) {
+function registerTreeCommands(
+  pi: ExtensionAPI,
+  edited: Map<string, EditStatus>,
+  getSettings: () => Settings,
+) {
+  const openExternally = (ctx: any, absPath: string) => {
+    const { cmd, args } = buildOpenCommand(process.platform, absPath);
+    try {
+      const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
+      child.on("error", () => {
+        ctx.ui.notify(`Could not open ${absPath}`, "error");
+      });
+      child.unref();
+    } catch {
+      ctx.ui.notify(`Could not open ${absPath}`, "error");
+    }
+  };
+
+  const peek = async (ctx: any, absPath: string) => {
+    const max = getSettings().maxPeekBytes;
+    let size = 0;
+    try {
+      size = statSync(absPath).size;
+    } catch {
+      ctx.ui.notify(`Cannot read ${basename(absPath)}`, "error");
+      return;
+    }
+    if (!isPreviewable(size, max)) {
+      const kb = (size / 1024).toFixed(0);
+      ctx.ui.notify(
+        `${basename(absPath)} too large to preview (${kb} KB) — press Enter to open externally`,
+        "warning",
+      );
+      return;
+    }
+
+    let raw: Buffer;
+    try {
+      raw = readFileSync(absPath);
+    } catch {
+      ctx.ui.notify(`Cannot read ${basename(absPath)}`, "error");
+      return;
+    }
+    if (looksBinary(raw.subarray(0, 4096))) {
+      ctx.ui.notify(
+        `${basename(absPath)} looks binary — press Enter to open externally`,
+        "warning",
+      );
+      return;
+    }
+
+    const text = raw.toString("utf-8");
+    let rendered: string;
+    try {
+      // S4: force color so cli-highlight (chalk) emits ANSI under pi's managed,
+      // non-TTY stdout. Without this, peek shows uncolored plain text.
+      process.env.FORCE_COLOR ||= "3";
+      // B2: lazy + graceful — if cli-highlight is missing, fall back to plain
+      // text instead of crashing the whole extension at module load.
+      const mod = await import("cli-highlight").catch(() => undefined);
+      rendered = mod?.highlight
+        ? mod.highlight(text, { language: detectLanguageFromPath(absPath), ignoreIllegals: true })
+        : text;
+    } catch {
+      rendered = text; // never crash the peek on a highlight failure
+    }
+    // Tab-expand so widths are predictable; split into display lines.
+    const allLines = rendered.replace(/\t/g, "  ").split("\n");
+
+    let peekScroll = 0;
+    await ctx.ui.custom(
+      (tui: any, theme: any, _kb: any, done: (v: null) => void) => {
+        const B = (s: string) => theme.fg("border", s);
+        const bodyH = (): number => Math.max(1, Math.floor(tui.terminal.rows * 0.8) - 4);
+
+        const buildPeek = (width: number): string[] => {
+          const innerW = width - 2;
+          const h = bodyH();
+          const maxScroll = Math.max(0, allLines.length - h);
+          if (peekScroll > maxScroll) peekScroll = maxScroll;
+          if (peekScroll < 0) peekScroll = 0;
+          const H = "─";
+          const lines: string[] = [];
+          lines.push(B("╭" + H.repeat(innerW) + "╮"));
+          const title = ` 👁  ${basename(absPath)}`;
+          const pos = `${peekScroll + 1}-${Math.min(peekScroll + h, allLines.length)}/${allLines.length} `;
+          const hint = `↑↓ scroll  g/G ends  esc close  ${pos}`;
+          const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(hint));
+          lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) +
+            theme.fg("dim", hint) + B("│"));
+          lines.push(B("├" + H.repeat(innerW) + "┤"));
+          const view = allLines.slice(peekScroll, peekScroll + h);
+          const rowsOut = view.length ? view : [theme.fg("dim", " (empty file)")];
+          for (const row of rowsOut) {
+            const cell = truncateToWidth(row, innerW);
+            // S5: append a hard reset so a multi-line highlight token (block
+            // comment, template literal) never bleeds color into the padding
+            // or right border of this or the next row.
+            const padded = cell + "\x1b[0m" + " ".repeat(Math.max(0, innerW - visibleWidth(cell)));
+            lines.push(B("│") + padded + B("│"));
+          }
+          lines.push(B("╰" + H.repeat(innerW) + "╯"));
+          return lines;
+        };
+
+        return {
+          render: (w: number) => buildPeek(w),
+          invalidate: () => {},
+          handleInput: (data: string) => {
+            const h = bodyH();
+            const maxScroll = Math.max(0, allLines.length - h);
+            if (matchesKey(data, Key.escape) || data === "q") return done(null);
+            if (matchesKey(data, Key.up))       { peekScroll = Math.max(0, peekScroll - 1);          tui.requestRender(); return; }
+            if (matchesKey(data, Key.down))     { peekScroll = Math.min(maxScroll, peekScroll + 1);   tui.requestRender(); return; }
+            if (matchesKey(data, Key.pageUp))   { peekScroll = Math.max(0, peekScroll - h);          tui.requestRender(); return; }
+            if (matchesKey(data, Key.pageDown)) { peekScroll = Math.min(maxScroll, peekScroll + h);  tui.requestRender(); return; }
+            if (data === "g") { peekScroll = 0;         tui.requestRender(); return; }
+            if (data === "G") { peekScroll = maxScroll; tui.requestRender(); return; }
+          },
+        };
+      },
+      {
+        overlay: true,
+        overlayOptions: { width: "85%", maxWidth: 120, minWidth: 50, maxHeight: "80%", anchor: "center" },
+      },
+    );
+  };
+
   const open = async (ctx: any) => {
     if (ctx.mode !== "tui") {
       ctx.ui.notify("/agent-files requires TUI mode", "error");
@@ -420,7 +571,7 @@ function registerTreeCommands(pi: ExtensionAPI, edited: Map<string, EditStatus>)
           const lines: string[] = [];
           lines.push(B("╭" + H.repeat(innerW) + "╮"));
           const title = " 📁 Project files";
-          const hint = "↑↓ move  → expand  ← collapse  esc close ";
+          const hint = "↑↓ move  ↵ open  → expand  ← collapse  p peek  esc close ";
           const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(hint));
           lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) +
             theme.fg("dim", hint) + B("│"));
@@ -448,8 +599,21 @@ function registerTreeCommands(pi: ExtensionAPI, edited: Map<string, EditStatus>)
             if (matchesKey(data, Key.down)) { selected = Math.min(rows.length - 1, selected + 1); tui.requestRender(); return; }
             const node = rows[selected];
             if (!node) return;
-            if (matchesKey(data, Key.right) || data === "\r") {
+            if (data === "\r") {
+              if (node.isDir) {
+                expanded.add(node.path);
+                tui.requestRender();
+              } else {
+                openExternally(ctx, resolve(cwd, node.path));
+              }
+              return;
+            }
+            if (matchesKey(data, Key.right)) {
               if (node.isDir) { expanded.add(node.path); tui.requestRender(); }
+              return;
+            }
+            if (data === "p") {
+              if (!node.isDir) void peek(ctx, resolve(cwd, node.path));
               return;
             }
             if (matchesKey(data, Key.left)) {

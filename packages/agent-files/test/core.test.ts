@@ -128,6 +128,62 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { buildOpenCommand } from "../src/core.ts";
+
+test("buildOpenCommand uses `open` on macOS", () => {
+  assert.deepEqual(buildOpenCommand("darwin", "/repo/a.md"), {
+    cmd: "open",
+    args: ["/repo/a.md"],
+  });
+});
+
+test("buildOpenCommand uses cmd/start on Windows", () => {
+  assert.deepEqual(buildOpenCommand("win32", "C:\\repo\\a.md"), {
+    cmd: "cmd",
+    args: ["/c", "start", "", "C:\\repo\\a.md"],
+  });
+});
+
+test("buildOpenCommand falls back to xdg-open elsewhere", () => {
+  assert.deepEqual(buildOpenCommand("linux", "/repo/a.md"), {
+    cmd: "xdg-open",
+    args: ["/repo/a.md"],
+  });
+  assert.deepEqual(buildOpenCommand("freebsd", "/repo/a.md"), {
+    cmd: "xdg-open",
+    args: ["/repo/a.md"],
+  });
+});
+
+import {
+  detectLanguageFromPath,
+  looksBinary,
+  isPreviewable,
+} from "../src/core.ts";
+
+test("detectLanguageFromPath maps known extensions", () => {
+  assert.equal(detectLanguageFromPath("src/core.ts"), "typescript");
+  assert.equal(detectLanguageFromPath("a/b.js"), "javascript");
+  assert.equal(detectLanguageFromPath("data.json"), "json");
+  assert.equal(detectLanguageFromPath("README.md"), "markdown");
+});
+
+test("detectLanguageFromPath returns undefined for unknown/extensionless", () => {
+  assert.equal(detectLanguageFromPath("Makefile"), undefined);
+  assert.equal(detectLanguageFromPath("weird.xyz"), undefined);
+});
+
+test("looksBinary detects a NUL byte, passes plain text", () => {
+  assert.equal(looksBinary(Buffer.from("hello world")), false);
+  assert.equal(looksBinary(Buffer.from([0x68, 0x00, 0x69])), true);
+});
+
+test("isPreviewable is true at/under cap, false over", () => {
+  assert.equal(isPreviewable(100, 512), true);
+  assert.equal(isPreviewable(512, 512), true);
+  assert.equal(isPreviewable(513, 512), false);
+});
+
 test("walkDirRelative lists files relative, excluding .git and node_modules", () => {
   const dir = mkdtempSync(join(tmpdir(), "agent-files-"));
   mkdirSync(join(dir, "sub"));

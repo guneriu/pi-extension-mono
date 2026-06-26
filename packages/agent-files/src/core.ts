@@ -199,3 +199,79 @@ export function listProjectFiles(cwd: string): string[] {
     return walkDirRelative(cwd);
   }
 }
+
+// ─── Open & Peek helpers ────────────────────────────────────────────────────
+
+export interface OpenCommand {
+  cmd: string;
+  args: string[];
+}
+
+/**
+ * Map a platform + absolute path to a spawnable OS "open with default app"
+ * command. Pure so it can be unit-tested without spawning anything.
+ * - darwin  -> `open <path>`
+ * - win32   -> `cmd /c start "" <path>`  (empty "" is the start window title)
+ * - other   -> `xdg-open <path>`         (linux, *bsd, incl. WSL)
+ */
+export function buildOpenCommand(
+  platform: NodeJS.Platform,
+  absPath: string,
+): OpenCommand {
+  if (platform === "darwin") return { cmd: "open", args: [absPath] };
+  if (platform === "win32") return { cmd: "cmd", args: ["/c", "start", "", absPath] };
+  return { cmd: "xdg-open", args: [absPath] };
+}
+
+/** Minimal extension -> cli-highlight language id map. Undefined => auto-detect. */
+const EXT_LANG: Record<string, string> = {
+  ts: "typescript",
+  tsx: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  json: "json",
+  md: "markdown",
+  markdown: "markdown",
+  css: "css",
+  scss: "scss",
+  html: "html",
+  xml: "xml",
+  yml: "yaml",
+  yaml: "yaml",
+  sh: "bash",
+  bash: "bash",
+  py: "python",
+  rs: "rust",
+  go: "go",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  java: "java",
+  rb: "ruby",
+  toml: "ini",
+  sql: "sql",
+};
+
+/** Language id for cli-highlight from a file path, or undefined to auto-detect. */
+export function detectLanguageFromPath(path: string): string | undefined {
+  const base = path.split("/").pop() ?? path;
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0) return undefined; // no ext, or dotfile like ".env"
+  const ext = base.slice(dot + 1).toLowerCase();
+  return EXT_LANG[ext];
+}
+
+/** Heuristic: a NUL byte in the sampled bytes means "binary". */
+export function looksBinary(buf: Buffer | Uint8Array): boolean {
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i] === 0) return true;
+  }
+  return false;
+}
+
+/** True when a file of `sizeBytes` is within the peek cap `maxBytes`. */
+export function isPreviewable(sizeBytes: number, maxBytes: number): boolean {
+  return sizeBytes <= maxBytes;
+}
