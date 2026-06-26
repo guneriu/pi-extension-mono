@@ -56,3 +56,42 @@ test("empty file list yields no header/rows", () => {
   assert.equal(lines.header, undefined);
   assert.deepEqual(lines.rows, []);
 });
+
+import {
+  buildTree,
+  ancestorsOf,
+  flattenVisible,
+  parseGitFileList,
+  type TreeNode,
+} from "../src/core.ts";
+
+test("parseGitFileList splits, trims, drops blanks", () => {
+  assert.deepEqual(parseGitFileList("a.md\nsub/b.ts\n\n"), ["a.md", "sub/b.ts"]);
+});
+
+test("buildTree nests files under dirs, dirs sorted before files", () => {
+  const root = buildTree(["docs/plans/rca.md", "docs/x.md", "FEATURES.md"]);
+  // root children: docs (dir) before FEATURES.md (file)
+  assert.deepEqual(root.children.map((c) => c.name), ["docs", "FEATURES.md"]);
+  const docs = root.children[0];
+  assert.equal(docs.isDir, true);
+  assert.deepEqual(docs.children.map((c) => c.name), ["plans", "x.md"]);
+});
+
+test("ancestorsOf returns each parent dir path", () => {
+  assert.deepEqual(ancestorsOf("docs/plans/rca.md"), ["docs", "docs/plans"]);
+  assert.deepEqual(ancestorsOf("FEATURES.md"), []);
+});
+
+test("flattenVisible only descends into expanded dirs", () => {
+  const root = buildTree(["docs/plans/rca.md", "FEATURES.md"]);
+  const collapsed = flattenVisible(root, new Set());
+  assert.deepEqual(collapsed.map((n) => n.path), ["docs", "FEATURES.md"]);
+  const expanded = flattenVisible(root, new Set(["docs", "docs/plans"]));
+  assert.deepEqual(expanded.map((n) => n.path), [
+    "docs",
+    "docs/plans",
+    "docs/plans/rca.md",
+    "FEATURES.md",
+  ]);
+});
