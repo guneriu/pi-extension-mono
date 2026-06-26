@@ -120,3 +120,30 @@ export function flattenVisible(root: TreeNode, expanded: Set<string>): TreeNode[
   walk(root);
   return out;
 }
+
+export interface BranchEdit {
+  path: string;
+  kind: EditKind;
+}
+
+/**
+ * Scan a session branch (ctx.sessionManager.getBranch()) for write/edit tool
+ * calls and return their target paths in order. Mirrors the toolCall shape used
+ * across pi sessions: assistant message -> content[] -> { type:"toolCall", name, arguments }.
+ */
+export function extractEditsFromBranch(branch: any[]): BranchEdit[] {
+  const edits: BranchEdit[] = [];
+  for (const entry of branch) {
+    if (entry?.type !== "message") continue;
+    if (entry.message?.role !== "assistant") continue;
+    for (const block of entry.message?.content ?? []) {
+      if (block?.type !== "toolCall") continue;
+      const kind = block.name;
+      if (kind !== "write" && kind !== "edit") continue;
+      const path = block.arguments?.path;
+      if (typeof path !== "string" || path.length === 0) continue;
+      edits.push({ path, kind });
+    }
+  }
+  return edits;
+}

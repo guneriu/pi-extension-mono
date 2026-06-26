@@ -95,3 +95,30 @@ test("flattenVisible only descends into expanded dirs", () => {
     "FEATURES.md",
   ]);
 });
+
+import { extractEditsFromBranch } from "../src/core.ts";
+
+test("extractEditsFromBranch collects write/edit paths from assistant toolCalls", () => {
+  const branch = [
+    { type: "message", message: { role: "assistant", content: [
+      { type: "toolCall", name: "edit", arguments: { path: "/repo/a.md" } },
+      { type: "toolCall", name: "read", arguments: { path: "/repo/skip.md" } },
+      { type: "toolCall", name: "write", arguments: { path: "/repo/b.md" } },
+    ] } },
+    { type: "message", message: { role: "user", content: [] } },
+  ];
+  const result = extractEditsFromBranch(branch);
+  assert.deepEqual(result, [
+    { path: "/repo/a.md", kind: "edit" },
+    { path: "/repo/b.md", kind: "write" },
+  ]);
+});
+
+test("extractEditsFromBranch ignores non-assistant + missing paths", () => {
+  const branch = [
+    { type: "message", message: { role: "assistant", content: [
+      { type: "toolCall", name: "write", arguments: {} },
+    ] } },
+  ];
+  assert.deepEqual(extractEditsFromBranch(branch), []);
+});
