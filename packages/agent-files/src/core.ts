@@ -147,3 +147,55 @@ export function extractEditsFromBranch(branch: any[]): BranchEdit[] {
   }
   return edits;
 }
+
+import { readdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+
+const ALWAYS_EXCLUDE = new Set([".git", "node_modules"]);
+
+/** Recursive readdir fallback returning posix-relative paths, excluding noise dirs. */
+export function walkDirRelative(cwd: string): string[] {
+  const out: string[] = [];
+  const walk = (absDir: string, relPrefix: string) => {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = readdirSync(absDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.isDirectory() && ALWAYS_EXCLUDE.has(e.name)) continue;
+      const rel = relPrefix ? `${relPrefix}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        walk(`${absDir}/${e.name}`, rel);
+      } else if (e.isFile()) {
+        out.push(rel);
+      }
+    }
+  };
+  walk(cwd, "");
+  return out;
+}
+
+/**
+ * Preferred source: git ls-files (respects .gitignore exactly). Falls back to a
+ * filesystem walk when not a git repo or git is unavailable.
+ *
+ * Note: `git ls-files --cached` can report staged-but-deleted paths, so we drop
+ * entries that no longer exist on disk before building the tree.
+ */
+export function listProjectFiles(cwd: string): string[] {
+  try {
+    const out = execFileSync(
+      "git",
+      ["ls-files", "--cached", "--others", "--exclude-standard"],
+      { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    const files = parseGitFileList(out).filter((rel) => existsSync(join(cwd, rel)));
+    if (files.length > 0) return files;
+    return walkDirRelative(cwd);
+  } catch {
+    return walkDirRelative(cwd);
+  }
+}

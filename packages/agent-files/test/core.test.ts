@@ -122,3 +122,22 @@ test("extractEditsFromBranch ignores non-assistant + missing paths", () => {
   ];
   assert.deepEqual(extractEditsFromBranch(branch), []);
 });
+
+import { walkDirRelative } from "../src/core.ts";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+test("walkDirRelative lists files relative, excluding .git and node_modules", () => {
+  const dir = mkdtempSync(join(tmpdir(), "agent-files-"));
+  mkdirSync(join(dir, "sub"));
+  mkdirSync(join(dir, ".git"));
+  mkdirSync(join(dir, "node_modules"));
+  writeFileSync(join(dir, "a.md"), "x");
+  writeFileSync(join(dir, "sub", "b.ts"), "x");
+  writeFileSync(join(dir, ".git", "cfg"), "x");
+  writeFileSync(join(dir, "node_modules", "dep.js"), "x");
+
+  const files = walkDirRelative(dir).sort();
+  assert.deepEqual(files, ["a.md", "sub/b.ts"]);
+});
