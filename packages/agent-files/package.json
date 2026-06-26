@@ -1,0 +1,22 @@
+{
+  "name": "@guneriu/pi-agent-files",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shows agent-edited files in a compact widget above the input bar, plus an on-demand interactive project tree (gitignore-aware)",
+  "keywords": ["pi-package", "pi-extension", "files", "tree", "explorer", "session"],
+  "author": "Ugur Gueneri (guneriu)",
+  "license": "MIT",
+  "files": ["extensions/", "src/", "README.md", "LICENSE"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/guneriu/pi-extension-mono",
+    "directory": "packages/agent-files"
+  },
+  "pi": {
+    "extensions": ["./extensions"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}
