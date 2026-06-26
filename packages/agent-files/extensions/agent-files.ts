@@ -7,7 +7,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Key, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import {
   ancestorsOf,
@@ -43,6 +43,14 @@ function loadSettings(): Settings {
   }
 }
 
+function saveSettings(s: Settings): void {
+  try {
+    writeFileSync(getSettingsFile(), JSON.stringify(s, null, 2), "utf-8");
+  } catch {
+    // non-fatal
+  }
+}
+
 const WIDGET_ID = "agent-files";
 
 export default function (pi: ExtensionAPI) {
@@ -55,6 +63,14 @@ export default function (pi: ExtensionAPI) {
   >();
   // Loaded once per session, not on every tool call (S2).
   let settings: Settings = loadSettings();
+  // Session-only collapse flag — never written to disk, resets on session_start.
+  let collapsed = false;
+
+  function updateSettings(fn: (s: Settings) => void, ctx: any): void {
+    fn(settings);
+    saveSettings(settings);
+    renderWidget(ctx);
+  }
 
   function toEditedFiles(cwd: string): EditedFile[] {
     // Newest-first so the compact widget shows the most recent edits (C1).
@@ -66,7 +82,7 @@ export default function (pi: ExtensionAPI) {
 
   function renderWidget(ctx: any) {
     if (ctx.mode !== "tui") return;
-    if (!settings.enabled) {
+    if (!settings.enabled || collapsed) {
       ctx.ui.setWidget(WIDGET_ID, undefined);
       return;
     }
@@ -120,6 +136,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (ctx.mode !== "tui") return;
     settings = loadSettings();
+    collapsed = false; // session collapse always resets on fresh session
     rebuildFromHistory(ctx);
     renderWidget(ctx);
   });
@@ -158,7 +175,177 @@ export default function (pi: ExtensionAPI) {
   });
 
   registerTreeCommands(pi, edited);
+  registerSettingsCommand(
+    pi,
+    () => settings,
+    (fn, ctx) => updateSettings(fn, ctx),
+    () => collapsed,
+    (v, ctx) => { collapsed = v; renderWidget(ctx); },
+  );
 }
+
+// ─── Settings menu ──────────────────────────────────────────────────────────
+
+function registerSettingsCommand(
+  pi: ExtensionAPI,
+  getSettings: () => Settings,
+  updateSettings: (fn: (s: Settings) => void, ctx: any) => void,
+  getCollapsed: () => boolean,
+  setCollapsed: (v: boolean, ctx: any) => void,
+) {
+  pi.registerCommand("agent-files-settings", {
+    description: "Open agent-files settings menu",
+    handler: async (_args, ctx) => {
+      if (ctx.mode !== "tui") {
+        ctx.ui.notify("/agent-files-settings requires TUI mode", "error");
+        return;
+      }
+
+      let selected = 0;
+
+      type ToggleItem = {
+        kind: "toggle";
+        label: string;
+        hint?: string;
+        get: () => boolean;
+        toggle: () => void;
+      };
+      type NumberItem = {
+        kind: "number";
+        label: string;
+        get: () => number;
+        inc: () => void;
+        dec: () => void;
+        min: number;
+        max: number;
+      };
+      type MenuItem = ToggleItem | NumberItem;
+
+      const items: MenuItem[] = [
+        {
+          kind: "toggle",
+          label: "Widget enabled",
+          hint: "persists across sessions",
+          get: () => getSettings().enabled,
+          toggle: () => updateSettings((s) => { s.enabled = !s.enabled; }, ctx),
+        },
+        {
+          kind: "toggle",
+          label: "Collapse this session",
+          hint: "resets when you restart pi",
+          get: () => getCollapsed(),
+          toggle: () => setCollapsed(!getCollapsed(), ctx),
+        },
+        {
+          kind: "number",
+          label: "Max widget rows",
+          get: () => getSettings().maxWidgetRows,
+          inc: () => updateSettings((s) => { s.maxWidgetRows = Math.min(20, s.maxWidgetRows + 1); }, ctx),
+          dec: () => updateSettings((s) => { s.maxWidgetRows = Math.max(1, s.maxWidgetRows - 1); }, ctx),
+          min: 1,
+          max: 20,
+        },
+        {
+          kind: "toggle",
+          label: "Show idle hint",
+          hint: "persists across sessions",
+          get: () => getSettings().showIdleHint,
+          toggle: () => updateSettings((s) => { s.showIdleHint = !s.showIdleHint; }, ctx),
+        },
+      ];
+
+      await ctx.ui.custom(
+        (tui: any, theme: any, _kb: any, done: (v: null) => void) => {
+          const B = (s: string) => theme.fg("border", s);
+
+          const buildRow = (item: MenuItem, i: number, innerW: number): string => {
+            const isSelected = i === selected;
+            const gutter = isSelected ? theme.fg("accent", "›") : " ";
+
+            let rowContent: string;
+            if (item.kind === "toggle") {
+              const on = item.get();
+              // Dim the "Collapse" option when widget is fully disabled — it's a no-op.
+              const dimmed = item.label === "Collapse this session" && !getSettings().enabled;
+              const box = dimmed
+                ? theme.fg("dim", "[ ]")
+                : on
+                  ? theme.fg("success", "[●]")
+                  : theme.fg("dim", "[ ]");
+              const labelColor = dimmed ? "dim" : isSelected ? "accent" : "muted";
+              const label = theme.fg(labelColor, item.label);
+              const hintStr = item.hint ? theme.fg("dim", `  ${item.hint}`) : "";
+              rowContent = ` ${box} ${label}${hintStr}`;
+            } else {
+              const val = item.get();
+              const atMin = val <= item.min;
+              const atMax = val >= item.max;
+              const labelColor = isSelected ? "accent" : "muted";
+              const left  = atMin ? theme.fg("dim", "‹") : theme.fg("accent", "‹");
+              const right = atMax ? theme.fg("dim", "›") : theme.fg("accent", "›");
+              rowContent = `    ${theme.fg(labelColor, item.label)}: ${left} ${theme.fg("success", String(val))} ${right}`;
+            }
+
+            const full = gutter + rowContent;
+            const cell = truncateToWidth(full, innerW);
+            return B("│") + cell + " ".repeat(Math.max(0, innerW - visibleWidth(cell))) + B("│");
+          };
+
+          const build = (width: number): string[] => {
+            const innerW = width - 2;
+            const H = "─";
+            const lines: string[] = [];
+
+            lines.push(B("╭" + H.repeat(innerW) + "╮"));
+            const title = " ⚙  Agent Files Settings";
+            const hint  = "↑↓ move  spc/↵ toggle  ←→ adjust  esc close ";
+            const gap   = Math.max(1, innerW - visibleWidth(title) - visibleWidth(hint));
+            lines.push(
+              B("│") + theme.fg("accent", title) + " ".repeat(gap) + theme.fg("dim", hint) + B("│"),
+            );
+            lines.push(B("├" + H.repeat(innerW) + "┤"));
+
+            for (let i = 0; i < items.length; i++) {
+              lines.push(buildRow(items[i], i, innerW));
+            }
+
+            lines.push(B("╰" + H.repeat(innerW) + "╯"));
+            return lines;
+          };
+
+          return {
+            render: (w: number) => build(w),
+            invalidate: () => {},
+            handleInput: (data: string) => {
+              if (matchesKey(data, Key.escape) || data === "q") return done(null);
+              if (matchesKey(data, Key.up))   { selected = Math.max(0, selected - 1);              tui.requestRender(); return; }
+              if (matchesKey(data, Key.down)) { selected = Math.min(items.length - 1, selected + 1); tui.requestRender(); return; }
+
+              const item = items[selected];
+              if (!item) return;
+
+              if (item.kind === "toggle" && (data === " " || data === "\r")) {
+                item.toggle();
+                tui.requestRender();
+                return;
+              }
+              if (item.kind === "number") {
+                if (matchesKey(data, Key.right)) { item.inc(); tui.requestRender(); return; }
+                if (matchesKey(data, Key.left))  { item.dec(); tui.requestRender(); return; }
+              }
+            },
+          };
+        },
+        {
+          overlay: true,
+          overlayOptions: { width: "60%", maxWidth: 72, minWidth: 52, maxHeight: "50%", anchor: "center" },
+        },
+      );
+    },
+  });
+}
+
+// ─── Project tree ─────────────────────────────────────────────────────────────
 
 function registerTreeCommands(pi: ExtensionAPI, edited: Map<string, EditStatus>) {
   const open = async (ctx: any) => {
