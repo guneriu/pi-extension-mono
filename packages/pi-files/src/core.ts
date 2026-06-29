@@ -193,8 +193,7 @@ export function listProjectFiles(cwd: string): string[] {
       { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] },
     );
     const files = parseGitFileList(out).filter((rel) => existsSync(join(cwd, rel)));
-    if (files.length > 0) return files;
-    return walkDirRelative(cwd);
+    return files; // trust git result even when empty — avoids surfacing gitignored files via fallback
   } catch {
     return walkDirRelative(cwd);
   }
@@ -306,14 +305,15 @@ const _BLU = "\x1b[94m"; // bright blue — blockquotes
  * links. Exported so it can be unit-tested independently.
  */
 export function applyInlineMarkdown(text: string): string {
-  // Inline code first — content inside backticks is treated as literal.
+  // Inline code first — everything inside backticks is literal.
   text = text.replace(/`([^`\n]+)`/g, `${_YLW}\`$1\`${_R}`);
-  // Bold: **text** or __text__
-  text = text.replace(/\*\*([^*\n]+)\*\*/g, `${_B}**$1**${_R}`);
-  text = text.replace(/__([^_\n]+)__/g, `${_B}__$1__${_R}`);
-  // Italic: *text* (single, not preceded/followed by another *)
-  text = text.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, `${_IT}*$1*${_R}`);
-  text = text.replace(/(?<!_)_([^_\n]+)_(?!_)/g, `${_IT}_$1_${_R}`);
+  // Bold: **text** or __text__ — exclude spans that contain backticks (already code-styled)
+  text = text.replace(/\*\*([^*\n`]+)\*\*/g, `${_B}**$1**${_R}`);
+  text = text.replace(/__([^_\n`]+)__/g, `${_B}__$1__${_R}`);
+  // Italic: *text* or _text_ — lookbehind/lookahead on backtick prevents matching
+  // inside code spans whose replacement output still contains the ` char.
+  text = text.replace(/(?<![*_`])\*([^*\n`]+)\*(?![*`])/g, `${_IT}*$1*${_R}`);
+  text = text.replace(/(?<![_`])_([^_\n`]+)_(?![_`])/g, `${_IT}_$1_${_R}`);
   // Links / images: [text](url)
   text = text.replace(/!?\[([^\]]*)\]\(([^)]*)\)/g, `${_MGT}[$1]${_R}${_DIM}($2)${_R}`);
   return text;

@@ -648,23 +648,25 @@ function registerTreeCommands(
           render: (w: number) => build(w),
           invalidate: () => {},
           handleInput: (data: string) => {
-            // Esc: clear filter if active, else close overlay
+            // Esc: clear filter and restore tree cursor, or close when already clear
             if (matchesKey(data, Key.escape)) {
-              if (searchQuery) { searchQuery = ""; selected = 0; scroll = 0; tui.requestRender(); }
+              if (searchQuery) { searchQuery = ""; selected = treeSelected; scroll = treeScroll; tui.requestRender(); }
               else done(null);
               return;
             }
 
-            // Backspace: remove last filter char
+            // Backspace: remove last filter char; restore tree cursor when emptied
             if (data === "\x7f" || data === "\b") {
               if (searchQuery.length > 0) {
                 searchQuery = searchQuery.slice(0, -1);
-                selected = 0; scroll = 0; tui.requestRender();
+                if (searchQuery.length === 0) { selected = treeSelected; scroll = treeScroll; }
+                else { selected = 0; scroll = 0; }
+                tui.requestRender();
               }
               return;
             }
 
-            // Space: peek selected (Quick Look style — works in both modes)
+            // Space: peek selected file (Quick Look — works in both modes)
             if (data === " ") {
               if (searchQuery) {
                 const path = filterFiles(allFiles, searchQuery)[selected];
@@ -673,6 +675,7 @@ function registerTreeCommands(
                 const rows = flattenVisible(root, expanded);
                 const node = rows[selected];
                 if (node && !node.isDir) void peek(ctx, resolve(cwd, node.path));
+                else if (node?.isDir) ctx.ui.notify("Space peeks files — press Enter or → to expand directories", "warning");
               }
               return;
             }
@@ -681,6 +684,7 @@ function registerTreeCommands(
             if (matchesKey(data, Key.up)) {
               selected = Math.max(0, selected - 1); tui.requestRender(); return;
             }
+            // Down: also uses pre-computed results if available to avoid extra call
             if (matchesKey(data, Key.down)) {
               const count = searchQuery
                 ? filterFiles(allFiles, searchQuery).length
@@ -728,8 +732,10 @@ function registerTreeCommands(
               }
             }
 
-            // Any printable char (excl. space, handled above): append to filter
+            // Any printable char (excl. space): append to filter.
+            // Save tree cursor on first character so Esc/backspace can restore it.
             if (data.length === 1 && data >= "!") {
+              if (!searchQuery) { treeSelected = selected; treeScroll = scroll; }
               searchQuery += data; selected = 0; scroll = 0; tui.requestRender();
             }
           },

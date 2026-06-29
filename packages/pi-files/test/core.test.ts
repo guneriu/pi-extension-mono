@@ -187,7 +187,6 @@ test("isPreviewable is true at/under cap, false over", () => {
 import { highlightMarkdown, applyInlineMarkdown } from "../src/core.ts";
 
 // ANSI code constants for assertions
-const RST  = "\x1b[0m";
 const BOLD = "\x1b[1m";
 const YLW  = "\x1b[33m";
 const CYN  = "\x1b[36m";
@@ -302,6 +301,57 @@ test("applyInlineMarkdown: [link](url) is magenta + dim url", () => {
 test("applyInlineMarkdown: text with no markup passes through", () => {
   const out = applyInlineMarkdown("ordinary words");
   assert.equal(out, "ordinary words");
+});
+
+test("applyInlineMarkdown: italic markers inside a code span are not styled", () => {
+  const IT = "\x1b[3m";
+  const out = applyInlineMarkdown("`_not italic_`");
+  assert.ok(!out.includes(IT), "italic must not apply inside a backtick code span");
+  assert.ok(out.includes(YLW), "code span must still be yellow");
+});
+
+test("applyInlineMarkdown: bold does not bleed across a backtick code span", () => {
+  // Content between ** contains a backtick — should not bold
+  const out = applyInlineMarkdown("text `code` more");
+  // The overall string should contain yellow (code span) but must NOT start with bold
+  assert.ok(out.includes(YLW), "inline code must be yellow");
+  assert.ok(!out.startsWith(BOLD), "surrounding plain text must not be bolded");
+});
+
+import { listProjectFiles } from "../src/core.ts";
+import { execFileSync } from "node:child_process";
+
+test("listProjectFiles: falls back to filesystem walk in non-git directory", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-files-nogit-"));
+  writeFileSync(join(dir, "hello.txt"), "x");
+  const files = listProjectFiles(dir);
+  assert.ok(files.includes("hello.txt"), "filesystem walk must find the file");
+});
+
+test("listProjectFiles: in a git repo, gitignored files do not appear", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-files-git-"));
+  execFileSync("git", ["init", "--quiet"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "T"], { cwd: dir });
+  writeFileSync(join(dir, ".gitignore"), "secret.txt\n");
+  writeFileSync(join(dir, "secret.txt"), "should not appear");
+  writeFileSync(join(dir, "visible.txt"), "should appear");
+  const files = listProjectFiles(dir);
+  assert.ok(files.includes("visible.txt"), "non-ignored file must appear");
+  assert.ok(!files.includes("secret.txt"), "gitignored file must not appear");
+});
+
+test("listProjectFiles: git repo with all files gitignored returns empty, not filesystem fallback", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-files-git-empty-"));
+  execFileSync("git", ["init", "--quiet"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "T"], { cwd: dir });
+  // Ignore everything except .gitignore itself
+  writeFileSync(join(dir, ".gitignore"), "hidden.txt\n");
+  writeFileSync(join(dir, "hidden.txt"), "gitignored");
+  const files = listProjectFiles(dir);
+  // hidden.txt is gitignored — must NOT appear even if git returns sparse results
+  assert.ok(!files.includes("hidden.txt"), "gitignored file must not appear via filesystem fallback");
 });
 
 test("walkDirRelative lists files relative, excluding .git and node_modules", () => {
