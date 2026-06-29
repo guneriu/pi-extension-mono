@@ -1,19 +1,32 @@
 {
   "name": "@guneriu/pi-session-files",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Pi extension that tracks context files, files read, and files modified in your current session — with sorting and filtering",
-  "keywords": ["pi-package", "pi-extension", "session", "files", "context", "tracking"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "session",
+    "files",
+    "context",
+    "tracking"
+  ],
   "author": "Uğur Güneri (guneriu)",
   "license": "MIT",
-  "files": ["extensions/", "README.md", "LICENSE"],
+  "files": [
+    "extensions/",
+    "README.md",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/guneriu/pi-extension-mono",
     "directory": "packages/session-files"
   },
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": [
+      "./extensions"
+    ]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
