@@ -8,12 +8,13 @@ input bar, and opens an interactive, gitignore-aware project tree on demand.
 - **Compact widget** above the editor: `+` new / `M` modified, capped rows with
   `… +N more` overflow so a big change set never swamps the terminal.
 - **Idle hint** when nothing is edited yet (toggle off in settings).
-- **`/pi-files`** — full-screen tree overlay with
-  keyboard navigation; auto-expands to your edited files on open.
-  - **`Enter`** on a file opens it in your OS default app (macOS, Linux, Windows).
-  - **`p`** on a file opens a scrollable, syntax-highlighted in-TUI preview.
+- **`/pi-files`** — full-screen tree overlay with keyboard navigation;
+  auto-expands to your edited files on open.
+  - **`Enter`** opens the selected file in your OS default app.
+  - **`Space`** opens a scrollable, syntax-highlighted in-TUI peek (Quick Look style).
+  - **Type anything** to filter all project files instantly — no prefix needed.
 - **`/pi-files-settings`** — interactive settings menu to toggle the widget,
-  collapse it for the session, adjust row cap, set the peek size limit, and more.
+  collapse it for the session, adjust the row cap, set the peek size limit, and more.
 - Respects `.gitignore` via `git ls-files`; falls back to a filesystem walk
   outside git repos.
 
@@ -39,22 +40,39 @@ pi install git:github.com/guneriu/pi-extension-mono
 | Key | Action |
 |---|---|
 | `↑` / `↓` | Move selection |
-| `Enter` | **Open the file in your OS default app** (expands a directory) |
-| `p` | **Peek: in-TUI syntax-highlighted preview** (files only) |
+| `Enter` | **Open file in OS default app** — expands a directory |
+| `Space` | **Peek** — in-TUI syntax-highlighted preview (toggle: same key closes) |
 | `→` | Expand a directory |
 | `←` | Collapse a directory — or jump to its parent if already collapsed |
-| `Esc` or `q` | Close the overlay |
+| `Esc` | Close the overlay (clears filter first if one is active) |
+| *any printable char* | **Filter** — type to search all project files instantly |
+| `Backspace` | Remove last filter character; empty filter returns to tree view |
+
+### Type-to-filter search
+
+Start typing anywhere in the tree — no prefix key needed. The view switches to
+a flat filtered list of **all** project files (including inside collapsed
+directories) whose path contains your query (case-insensitive).
+
+- The header shows `/ query▌  N results  esc clear` while filtering.
+- Matched portion of each path is highlighted.
+- `↑/↓`, `Enter`, and `Space` (peek) all work on filter results.
+- `Esc` clears the filter and returns to the tree. `Esc` again closes the overlay.
+- `Backspace` removes one character at a time; empties = back to tree.
+- `→` / `←` expand/collapse are inactive while filtering.
 
 ### Opening files
 
-- **`Enter`** launches the file with your operating system's default
-  application (`open` on macOS, `xdg-open` on Linux, `start` on Windows). On a
-  headless/SSH box with no GUI handler you'll get a notification instead.
-- **`p`** opens a scrollable, syntax-highlighted preview *inside* pi — no need to
-  leave the terminal. Scroll with `↑/↓`, page with `PgUp/PgDn`, jump with `g`/`G`,
-  close with `Esc`/`q`.
-  - Files larger than **Max peek size** (default 512 KB) are refused with a hint
-    to open them externally instead.
+- **`Enter`** launches the file with your OS default application (`open` on
+  macOS, `xdg-open` on Linux, `start` on Windows). On a headless/SSH box with
+  no GUI handler you'll get a notification instead.
+- **`Space`** opens a scrollable, syntax-highlighted preview *inside* pi — no
+  need to leave the terminal. Press `Space` again (or `Esc`/`q`) to close.
+  - Scroll with `↑/↓`, page with `PgUp/PgDn`, jump to top/bottom with `g`/`G`.
+  - Markdown files get structural highlighting (headings, code blocks, lists,
+    links) via a built-in pure ANSI renderer — no extra tools required.
+  - Files larger than **Max peek size** (default 512 KB) are refused with a
+    hint to open them externally instead.
   - Binary files are detected and refused (open them externally).
 
 ### Inside the settings menu (`/pi-files-settings`)
@@ -63,7 +81,7 @@ pi install git:github.com/guneriu/pi-extension-mono
 |---|---|
 | `↑` / `↓` | Move between items |
 | `Space` or `Enter` | Toggle a boolean setting |
-| `←` / `→` | Decrease / increase **Max widget rows** (1–20) and **Max peek size** (64–8192 KB) |
+| `←` / `→` | Decrease / increase a number setting |
 | `Esc` or `q` | Close the menu |
 
 ## Settings
@@ -78,8 +96,8 @@ Settings can be changed interactively via `/pi-files-settings` or by editing
 | `showIdleHint` | `true` | Show a one-line hint when no files have been edited yet | ✅ yes |
 | `maxPeekBytes` | `524288` | Largest file (bytes) the in-TUI peek will render | ✅ yes |
 
-In the settings menu, **Max peek size (KB)** is adjusted with `←/→` in 64 KB
-steps (range 64 KB–8 MB).
+In the settings menu, **Max widget rows** is adjusted with `←/→` (range 1–20)
+and **Max peek size (KB)** in 64 KB steps (range 64 KB–8 MB).
 
 ### Session collapse
 
