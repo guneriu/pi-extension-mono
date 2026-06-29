@@ -466,7 +466,7 @@ function registerTreeCommands(
           lines.push(B("╭" + H.repeat(innerW) + "╮"));
           const title = ` 👁  ${basename(absPath)}`;
           const pos = `${peekScroll + 1}-${Math.min(peekScroll + h, allLines.length)}/${allLines.length} `;
-          const hint = `↑↓ scroll  g/G ends  esc close  ${pos}`;
+          const hint = `↑↓ scroll  g/G ends  spc/esc close  ${pos}`;
           const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(hint));
           lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) +
             theme.fg("dim", hint) + B("│"));
@@ -491,7 +491,7 @@ function registerTreeCommands(
           handleInput: (data: string) => {
             const h = bodyH();
             const maxScroll = Math.max(0, allLines.length - h);
-            if (matchesKey(data, Key.escape) || data === "q") return done(null);
+            if (matchesKey(data, Key.escape) || data === "q" || data === " ") return done(null);
             if (matchesKey(data, Key.up))       { peekScroll = Math.max(0, peekScroll - 1);          tui.requestRender(); return; }
             if (matchesKey(data, Key.down))     { peekScroll = Math.min(maxScroll, peekScroll + 1);   tui.requestRender(); return; }
             if (matchesKey(data, Key.pageUp))   { peekScroll = Math.max(0, peekScroll - h);          tui.requestRender(); return; }
