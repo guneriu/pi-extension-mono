@@ -529,7 +529,6 @@ function registerTreeCommands(
 
     let selected = 0;
     let scroll = 0;
-    let searchMode = false;
     let searchQuery = "";
 
     await ctx.ui.custom(
@@ -550,7 +549,7 @@ function registerTreeCommands(
 
         const visibleBody = (): number => {
           const max = Math.max(1, Math.floor(tui.terminal.rows * 0.8) - 4);
-          const total = searchMode
+          const total = searchQuery
             ? Math.max(1, filterFiles(allFiles, searchQuery).length)
             : Math.max(1, flattenVisible(root, expanded).length);
           return Math.min(max, total);
@@ -619,23 +618,23 @@ function registerTreeCommands(
           const lines: string[] = [];
           lines.push(B("╭" + H.repeat(innerW) + "╮"));
           const title = " 📁 Project files";
-          if (searchMode) {
+          if (searchQuery) {
             const count = filterFiles(allFiles, searchQuery).length;
             const prompt = theme.fg("success", `/ ${searchQuery}▌`);
             const info = theme.fg("dim", `  ${count} result${count !== 1 ? "s" : ""}  esc clear `);
-            const promptPlain = `/ ${searchQuery}\u258b`;
+            const promptPlain = `/ ${searchQuery}▌`;
             const infoPlain = `  ${count} result${count !== 1 ? "s" : ""}  esc clear `;
             const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(promptPlain) - visibleWidth(infoPlain));
             lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) + prompt + info + B("│"));
           } else {
-            const hint = "↑↓ move  ↵ open  → expand  ← collapse  / search  p peek  esc close ";
+            const hint = "↑↓ move  ↵ open  → expand  ← collapse  spc peek  type to filter  esc close ";
             const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(hint));
             lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) +
               theme.fg("dim", hint) + B("│"));
           }
           lines.push(B("├" + H.repeat(innerW) + "┤"));
-          const body = searchMode ? buildSearchBody(innerW, bodyH) : buildBody(innerW, bodyH);
-          const empty = searchMode ? " (no matches)" : " (no files)";
+          const body = searchQuery ? buildSearchBody(innerW, bodyH) : buildBody(innerW, bodyH);
+          const empty = searchQuery ? " (no matches)" : " (no files)";
           const rowsOut = body.length ? body : [theme.fg("dim", empty)];
           for (const row of rowsOut) {
             const cell = truncateToWidth(row, innerW);
@@ -649,87 +648,89 @@ function registerTreeCommands(
           render: (w: number) => build(w),
           invalidate: () => {},
           handleInput: (data: string) => {
-            // ── Search mode ────────────────────────────────────────────────
-            if (searchMode) {
-              if (matchesKey(data, Key.escape)) {
-                searchMode = false; searchQuery = ""; selected = 0; scroll = 0;
-                tui.requestRender(); return;
-              }
-              if (data === "\x7f" || data === "\b") { // DEL / BS
+            // Esc: clear filter if active, else close overlay
+            if (matchesKey(data, Key.escape)) {
+              if (searchQuery) { searchQuery = ""; selected = 0; scroll = 0; tui.requestRender(); }
+              else done(null);
+              return;
+            }
+
+            // Backspace: remove last filter char
+            if (data === "\x7f" || data === "\b") {
+              if (searchQuery.length > 0) {
                 searchQuery = searchQuery.slice(0, -1);
-                if (searchQuery.length === 0) searchMode = false;
-                selected = 0; scroll = 0; tui.requestRender(); return;
-              }
-              if (matchesKey(data, Key.up)) {
-                selected = Math.max(0, selected - 1); tui.requestRender(); return;
-              }
-              if (matchesKey(data, Key.down)) {
-                const count = filterFiles(allFiles, searchQuery).length;
-                selected = Math.min(Math.max(0, count - 1), selected + 1);
-                tui.requestRender(); return;
-              }
-              if (data === "\r") {
-                const results = filterFiles(allFiles, searchQuery);
-                const path = results[selected];
-                if (path) openExternally(ctx, resolve(cwd, path));
-                return;
-              }
-              if (data === "p") {
-                const results = filterFiles(allFiles, searchQuery);
-                const path = results[selected];
-                if (path) void peek(ctx, resolve(cwd, path));
-                return;
-              }
-              // Printable char → append to query
-              if (data.length === 1 && data >= " ") {
-                searchQuery += data; selected = 0; scroll = 0;
-                tui.requestRender(); return;
+                selected = 0; scroll = 0; tui.requestRender();
               }
               return;
             }
 
-            // ── Tree mode ──────────────────────────────────────────────────
-            const rows = flattenVisible(root, expanded);
-            if (matchesKey(data, Key.escape) || data === "q") return done(null);
-            if (data === "/") {
-              searchMode = true; searchQuery = ""; selected = 0; scroll = 0;
+            // Space: peek selected (Quick Look style — works in both modes)
+            if (data === " ") {
+              if (searchQuery) {
+                const path = filterFiles(allFiles, searchQuery)[selected];
+                if (path) void peek(ctx, resolve(cwd, path));
+              } else {
+                const rows = flattenVisible(root, expanded);
+                const node = rows[selected];
+                if (node && !node.isDir) void peek(ctx, resolve(cwd, node.path));
+              }
+              return;
+            }
+
+            // Up / Down: navigate
+            if (matchesKey(data, Key.up)) {
+              selected = Math.max(0, selected - 1); tui.requestRender(); return;
+            }
+            if (matchesKey(data, Key.down)) {
+              const count = searchQuery
+                ? filterFiles(allFiles, searchQuery).length
+                : flattenVisible(root, expanded).length;
+              selected = Math.min(Math.max(0, count - 1), selected + 1);
               tui.requestRender(); return;
             }
-            if (rows.length === 0) return; // nothing to navigate (empty tree)
-            if (matchesKey(data, Key.up)) { selected = Math.max(0, selected - 1); tui.requestRender(); return; }
-            if (matchesKey(data, Key.down)) { selected = Math.min(rows.length - 1, selected + 1); tui.requestRender(); return; }
-            const node = rows[selected];
-            if (!node) return;
+
+            // Enter: open selected
             if (data === "\r") {
-              if (node.isDir) {
-                expanded.add(node.path);
-                tui.requestRender();
+              if (searchQuery) {
+                const path = filterFiles(allFiles, searchQuery)[selected];
+                if (path) openExternally(ctx, resolve(cwd, path));
               } else {
-                openExternally(ctx, resolve(cwd, node.path));
+                const rows = flattenVisible(root, expanded);
+                const node = rows[selected];
+                if (!node) return;
+                if (node.isDir) { expanded.add(node.path); tui.requestRender(); }
+                else openExternally(ctx, resolve(cwd, node.path));
               }
               return;
             }
-            if (matchesKey(data, Key.right)) {
-              if (node.isDir) { expanded.add(node.path); tui.requestRender(); }
-              return;
-            }
-            if (data === "p") {
-              if (!node.isDir) void peek(ctx, resolve(cwd, node.path));
-              return;
-            }
-            if (matchesKey(data, Key.left)) {
-              if (node.isDir && expanded.has(node.path)) {
-                expanded.delete(node.path);
-              } else {
-                const parents = ancestorsOf(node.path);
-                const parent = parents[parents.length - 1];
-                if (parent) {
-                  const pIdx = flattenVisible(root, expanded).findIndex((n) => n.path === parent);
-                  if (pIdx >= 0) selected = pIdx;
+
+            // Tree-only keys: expand / collapse dirs (inactive while filtering)
+            if (!searchQuery) {
+              const rows = flattenVisible(root, expanded);
+              const node = rows[selected];
+              if (!node) return;
+              if (matchesKey(data, Key.right)) {
+                if (node.isDir) { expanded.add(node.path); tui.requestRender(); }
+                return;
+              }
+              if (matchesKey(data, Key.left)) {
+                if (node.isDir && expanded.has(node.path)) {
+                  expanded.delete(node.path);
+                } else {
+                  const parents = ancestorsOf(node.path);
+                  const parent = parents[parents.length - 1];
+                  if (parent) {
+                    const pIdx = flattenVisible(root, expanded).findIndex((n) => n.path === parent);
+                    if (pIdx >= 0) selected = pIdx;
+                  }
                 }
+                tui.requestRender(); return;
               }
-              tui.requestRender();
-              return;
+            }
+
+            // Any printable char (excl. space, handled above): append to filter
+            if (data.length === 1 && data >= "!") {
+              searchQuery += data; selected = 0; scroll = 0; tui.requestRender();
             }
           },
         };
