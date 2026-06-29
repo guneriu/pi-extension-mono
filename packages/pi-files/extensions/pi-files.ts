@@ -530,6 +530,8 @@ function registerTreeCommands(
     let selected = 0;
     let scroll = 0;
     let searchQuery = "";
+    let treeSelected = 0; // tree cursor saved when search starts, restored on clear
+    let treeScroll = 0;
 
     await ctx.ui.custom(
       (tui: any, theme: any, _kb: any, done: (v: null) => void) => {
