@@ -19,6 +19,7 @@ import {
   classifyEdit,
   detectLanguageFromPath,
   extractEditsFromBranch,
+  filterFiles,
   flattenVisible,
   highlightMarkdown,
   isPreviewable,
@@ -513,7 +514,8 @@ function registerTreeCommands(
       return;
     }
     const cwd = ctx.sessionManager.getCwd();
-    const root = buildTree(listProjectFiles(cwd));
+    const allFiles = listProjectFiles(cwd);
+    const root = buildTree(allFiles);
 
     // Edited files as cwd-relative posix paths for highlight + auto-expand.
     const toRel = (abs: string) => relative(cwd, abs).split("\\").join("/");
@@ -527,17 +529,55 @@ function registerTreeCommands(
 
     let selected = 0;
     let scroll = 0;
+    let searchMode = false;
+    let searchQuery = "";
 
     await ctx.ui.custom(
       (tui: any, theme: any, _kb: any, done: (v: null) => void) => {
         const B = (s: string) => theme.fg("border", s);
 
-        // C2: derive body height from the terminal so the box stays close to the
-        // 80% maxHeight (degenerate <~6-row terminals keep a 1-row minimum).
+        // Highlight the matched portion of a path in accent color.
+        const highlightMatch = (path: string, query: string): string => {
+          if (!query) return theme.fg("muted", path);
+          const lo = path.toLowerCase().indexOf(query.toLowerCase());
+          if (lo < 0) return theme.fg("muted", path);
+          return (
+            theme.fg("muted", path.slice(0, lo)) +
+            theme.fg("accent", path.slice(lo, lo + query.length)) +
+            theme.fg("muted", path.slice(lo + query.length))
+          );
+        };
+
         const visibleBody = (): number => {
           const max = Math.max(1, Math.floor(tui.terminal.rows * 0.8) - 4);
-          const total = flattenVisible(root, expanded).length || 1;
+          const total = searchMode
+            ? Math.max(1, filterFiles(allFiles, searchQuery).length)
+            : Math.max(1, flattenVisible(root, expanded).length);
           return Math.min(max, total);
+        };
+
+        const buildSearchBody = (innerW: number, bodyH: number): string[] => {
+          const results = filterFiles(allFiles, searchQuery);
+          if (selected >= results.length) selected = Math.max(0, results.length - 1);
+          if (selected < 0) selected = 0;
+          if (selected < scroll) scroll = selected;
+          if (selected >= scroll + bodyH) scroll = selected - bodyH + 1;
+          if (scroll < 0) scroll = 0;
+
+          return results.slice(scroll, scroll + bodyH).map((path, i) => {
+            const idx = scroll + i;
+            const isSelected = idx === selected;
+            const status = editedStatus.get(path);
+            const statusPart = status ? statusGlyph(status) + " " : "";
+            const gutter = isSelected ? theme.fg("accent", "›") : " ";
+            const prefix = status
+              ? theme.fg(status === "new" ? "success" : "warning", statusGlyph(status) + " ")
+              : "";
+            const pathStyled = highlightMatch(path, searchQuery);
+            // Use plain-text width for padding calculation
+            const pad = " ".repeat(Math.max(0, innerW - 1 - visibleWidth(` ${statusPart}${path}`)));
+            return gutter + " " + prefix + pathStyled + pad;
+          });
         };
 
         const buildBody = (innerW: number, bodyH: number): string[] => {
@@ -579,15 +619,24 @@ function registerTreeCommands(
           const lines: string[] = [];
           lines.push(B("╭" + H.repeat(innerW) + "╮"));
           const title = " 📁 Project files";
-          const hint = "↑↓ move  ↵ open  → expand  ← collapse  p peek  esc close ";
-          const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(hint));
-          lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) +
-            theme.fg("dim", hint) + B("│"));
+          if (searchMode) {
+            const count = filterFiles(allFiles, searchQuery).length;
+            const prompt = theme.fg("success", `/ ${searchQuery}▌`);
+            const info = theme.fg("dim", `  ${count} result${count !== 1 ? "s" : ""}  esc clear `);
+            const promptPlain = `/ ${searchQuery}\u258b`;
+            const infoPlain = `  ${count} result${count !== 1 ? "s" : ""}  esc clear `;
+            const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(promptPlain) - visibleWidth(infoPlain));
+            lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) + prompt + info + B("│"));
+          } else {
+            const hint = "↑↓ move  ↵ open  → expand  ← collapse  / search  p peek  esc close ";
+            const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(hint));
+            lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) +
+              theme.fg("dim", hint) + B("│"));
+          }
           lines.push(B("├" + H.repeat(innerW) + "┤"));
-          // Pad every cell to exactly innerW visible cols AFTER truncation so the
-          // right border stays aligned for short, exact, and over-long rows.
-          const body = buildBody(innerW, bodyH);
-          const rowsOut = body.length ? body : [theme.fg("dim", " (no files)")];
+          const body = searchMode ? buildSearchBody(innerW, bodyH) : buildBody(innerW, bodyH);
+          const empty = searchMode ? " (no matches)" : " (no files)";
+          const rowsOut = body.length ? body : [theme.fg("dim", empty)];
           for (const row of rowsOut) {
             const cell = truncateToWidth(row, innerW);
             lines.push(B("│") + cell + " ".repeat(Math.max(0, innerW - visibleWidth(cell))) + B("│"));
@@ -600,8 +649,52 @@ function registerTreeCommands(
           render: (w: number) => build(w),
           invalidate: () => {},
           handleInput: (data: string) => {
+            // ── Search mode ────────────────────────────────────────────────
+            if (searchMode) {
+              if (matchesKey(data, Key.escape)) {
+                searchMode = false; searchQuery = ""; selected = 0; scroll = 0;
+                tui.requestRender(); return;
+              }
+              if (data === "\x7f" || data === "\b") { // DEL / BS
+                searchQuery = searchQuery.slice(0, -1);
+                if (searchQuery.length === 0) searchMode = false;
+                selected = 0; scroll = 0; tui.requestRender(); return;
+              }
+              if (matchesKey(data, Key.up)) {
+                selected = Math.max(0, selected - 1); tui.requestRender(); return;
+              }
+              if (matchesKey(data, Key.down)) {
+                const count = filterFiles(allFiles, searchQuery).length;
+                selected = Math.min(Math.max(0, count - 1), selected + 1);
+                tui.requestRender(); return;
+              }
+              if (data === "\r") {
+                const results = filterFiles(allFiles, searchQuery);
+                const path = results[selected];
+                if (path) openExternally(ctx, resolve(cwd, path));
+                return;
+              }
+              if (data === "p") {
+                const results = filterFiles(allFiles, searchQuery);
+                const path = results[selected];
+                if (path) void peek(ctx, resolve(cwd, path));
+                return;
+              }
+              // Printable char → append to query
+              if (data.length === 1 && data >= " ") {
+                searchQuery += data; selected = 0; scroll = 0;
+                tui.requestRender(); return;
+              }
+              return;
+            }
+
+            // ── Tree mode ──────────────────────────────────────────────────
             const rows = flattenVisible(root, expanded);
             if (matchesKey(data, Key.escape) || data === "q") return done(null);
+            if (data === "/") {
+              searchMode = true; searchQuery = ""; selected = 0; scroll = 0;
+              tui.requestRender(); return;
+            }
             if (rows.length === 0) return; // nothing to navigate (empty tree)
             if (matchesKey(data, Key.up)) { selected = Math.max(0, selected - 1); tui.requestRender(); return; }
             if (matchesKey(data, Key.down)) { selected = Math.min(rows.length - 1, selected + 1); tui.requestRender(); return; }

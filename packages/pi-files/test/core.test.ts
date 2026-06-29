@@ -197,6 +197,28 @@ const BLU  = "\x1b[94m";
 /** Strip all ANSI SGR codes so we can assert plain text content separately. */
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
+import { filterFiles } from "../src/core.ts";
+
+test("filterFiles: empty query returns all files", () => {
+  const files = ["src/core.ts", "README.md", "test/core.test.ts"];
+  assert.deepEqual(filterFiles(files, ""), files);
+});
+
+test("filterFiles: case-insensitive substring match", () => {
+  const files = ["src/Core.ts", "README.md", "test/core.test.ts"];
+  assert.deepEqual(filterFiles(files, "core"), ["src/Core.ts", "test/core.test.ts"]);
+});
+
+test("filterFiles: no match returns empty array", () => {
+  const files = ["src/core.ts", "README.md"];
+  assert.deepEqual(filterFiles(files, "zzznomatch"), []);
+});
+
+test("filterFiles: matches on full path, not just filename", () => {
+  const files = ["packages/pi-files/src/core.ts", "packages/pi-footer/src/index.ts"];
+  assert.deepEqual(filterFiles(files, "pi-files"), ["packages/pi-files/src/core.ts"]);
+});
+
 test("highlightMarkdown: h1 is bold + cyan, text preserved", () => {
   const out = highlightMarkdown("# Hello World");
   assert.ok(out.includes(BOLD), "h1 must be bold");

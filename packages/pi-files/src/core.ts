@@ -276,6 +276,16 @@ export function isPreviewable(sizeBytes: number, maxBytes: number): boolean {
   return sizeBytes <= maxBytes;
 }
 
+/**
+ * Case-insensitive substring filter over a flat file list.
+ * Empty query returns the full list unchanged.
+ */
+export function filterFiles(files: string[], query: string): string[] {
+  if (!query) return files;
+  const q = query.toLowerCase();
+  return files.filter((f) => f.toLowerCase().includes(q));
+}
+
 // ─── Markdown highlighter ───────────────────────────────────────────────────
 // Pure, zero-dependency, 16-color ANSI — works on macOS, Linux, Windows.
 // Uses only the base 16-color range so there is no truecolor/256-color
