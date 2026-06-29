@@ -13,7 +13,8 @@
     "directory": "packages/keybindings-help"
   },
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": ["./extensions"],
+    "image": "https://raw.githubusercontent.com/guneriu/pi-extension-mono/main/assets/keybindings-help-preview.png"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"

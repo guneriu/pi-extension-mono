@@ -13,7 +13,8 @@
     "directory": "packages/pi-files"
   },
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": ["./extensions"],
+    "image": "https://raw.githubusercontent.com/guneriu/pi-extension-mono/main/assets/pi-files-preview.png"
   },
   "dependencies": {
     "cli-highlight": "^2.1.11"
