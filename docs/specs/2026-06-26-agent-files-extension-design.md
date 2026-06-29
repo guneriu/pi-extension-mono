@@ -1,7 +1,7 @@
-# agent-files Extension — Design
+# pi-files Extension — Design
 
 **Date:** 2026-06-26
-**Package:** `@guneriu/pi-agent-files`
+**Package:** `@guneriu/pi-files`
 **Status:** Approved (pending spec review)
 
 ## Goal
@@ -38,15 +38,15 @@ change set swamp the terminal.
 
 Two files, both shipped with the package:
 
-- `packages/agent-files/src/core.ts` — **pure logic, zero pi/TUI imports**
+- `packages/pi-files/src/core.ts` — **pure logic, zero pi/TUI imports**
   (classification, widget line builder, tree builder, visible-rows DFS,
   git-output parsing). Independently unit-testable with Node's built-in test
   runner; no peer deps required.
-- `packages/agent-files/extensions/agent-files.ts` — the discoverable extension
+- `packages/pi-files/extensions/pi-files.ts` — the discoverable extension
   (pi/TUI wiring) that imports from `../src/core`.
 
 The core module lives outside `extensions/` so pi's directory-based extension
-discovery only picks up `agent-files.ts` (which has the default export).
+discovery only picks up `pi-files.ts` (which has the default export).
 
 **Import convention:** the extension imports core **extensionless**
 (`../src/core`, matching pi's loader / the proven `pi-footer` cross-file import);
@@ -55,7 +55,7 @@ explicit extension). These intentionally differ.
 
 **No cross-package imports** — the small amount of session-scan logic
 overlapping `session-files` is re-implemented locally so the package is
-independently deployable (`pi install npm:@guneriu/pi-agent-files`).
+independently deployable (`pi install npm:@guneriu/pi-files`).
 
 ### Components (logical sections within the one file)
 
@@ -77,12 +77,12 @@ independently deployable (`pi install npm:@guneriu/pi-agent-files`).
      pre-write state, so reconstructed edits are classified `"modified"`.
    - Any change re-renders the widget.
 
-3. **Widget** — `ctx.ui.setWidget("agent-files", factory, { placement: "aboveEditor" })`.
+3. **Widget** — `ctx.ui.setWidget("pi-files", factory, { placement: "aboveEditor" })`.
    - Settings are loaded **once per session** (at `session_start`), not on every
      tool call, to avoid disk I/O churn.
-   - Idle (0 edits) + `showIdleHint`: one dim line `📁 /agent-files — file tree`.
-   - Idle + `!showIdleHint`: `ctx.ui.setWidget("agent-files", undefined)`.
-   - With edits: header `Edited files (N) · /agent-files` then up to
+   - Idle (0 edits) + `showIdleHint`: one dim line `📁 /pi-files — file tree`.
+   - Idle + `!showIdleHint`: `ctx.ui.setWidget("pi-files", undefined)`.
+   - With edits: header `Edited files (N) · /pi-files` then up to
      `maxWidgetRows` rows **newest-first**, each `glyph + repo-relative path`
      (`+` new / `M` modified, themed). Overflow → `… +K more`. Repo-relative via
      `path.relative(cwd, abs)`.
@@ -108,7 +108,7 @@ independently deployable (`pi install npm:@guneriu/pi-agent-files`).
    - `session_shutdown`: clear state **and** clear the widget (`setWidget(undefined)`).
    - `tool_call` → capture pending pre-state; `tool_execution_end` → commit on
      success + re-render widget.
-   - `registerCommand("agent-files", …)` and `registerCommand("files", …)` →
+   - `registerCommand("pi-files", …)` and `registerCommand("files", …)` →
      open the tree popup. Both guard `ctx.mode === "tui"`.
 
 ### Data flow
@@ -116,7 +116,7 @@ independently deployable (`pi install npm:@guneriu/pi-agent-files`).
 ```
 tool_call(write/edit) ──► edit tracker map ──► setWidget(re-render)
 session_start ──► rebuild map from getBranch() ──► setWidget
-/agent-files | /files ──► git ls-files + map ──► ctx.ui.custom(overlay tree)
+/pi-files | /files ──► git ls-files + map ──► ctx.ui.custom(overlay tree)
 ```
 
 ### Terminal-safety
@@ -141,21 +141,21 @@ and scrolls. So the always-on footprint is bounded regardless of change-set size
   on Node ≥ 23.6; add `--experimental-strip-types` only on older Node),
   no peer deps needed.
 - **Manual TUI smoke test:** load via `pi install ./pi-extension-mono` + `/reload`,
-  run `/agent-files`, verify navigation, edited highlighting, idle hint, overflow.
+  run `/pi-files`, verify navigation, edited highlighting, idle hint, overflow.
 
 ## Files
 
 ```
-packages/agent-files/
-├── extensions/agent-files.ts      # discoverable extension (pi/TUI wiring)
+packages/pi-files/
+├── extensions/pi-files.ts      # discoverable extension (pi/TUI wiring)
 ├── src/core.ts                    # pure logic (no pi/TUI imports)
 ├── test/core.test.ts              # node:test unit tests
-├── package.json                   # @guneriu/pi-agent-files
+├── package.json                   # @guneriu/pi-files
 ├── README.md
 └── LICENSE
 ```
 
-Root `package.json`: add `"./packages/agent-files/extensions"` to `pi.extensions`.
+Root `package.json`: add `"./packages/pi-files/extensions"` to `pi.extensions`.
 Root `README.md`: add a table row.
 
 ## Open follow-ups (not in scope now)

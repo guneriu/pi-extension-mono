@@ -1,12 +1,12 @@
-# agent-files: Open & Peek Files — Design
+# pi-files: Open & Peek Files — Design
 
 **Date:** 2026-06-26
-**Package:** `@guneriu/pi-agent-files`
+**Package:** `@guneriu/pi-files`
 **Status:** Approved (pending spec review)
 
 ## Goal
 
-Add file-opening from the `/agent-files` project tree:
+Add file-opening from the `/pi-files` project tree:
 
 1. **Enter** on a file → open it in the **OS default application** (cross-platform).
 2. **`p`** on a file → **peek**: an in-TUI, scrollable, syntax-highlighted preview.
@@ -38,7 +38,7 @@ Keeps the existing two-file split:
 
 - `src/core.ts` — **pure logic, unit-tested** (no pi/TUI imports). New helpers:
   `buildOpenCommand`, `detectLanguageFromPath`, `looksBinary`, `isPreviewable`.
-- `extensions/agent-files.ts` — pi/TUI wiring: spawn the OS opener, render the
+- `extensions/pi-files.ts` — pi/TUI wiring: spawn the OS opener, render the
   peek overlay, bind the new keys in the tree overlay.
 
 ### External open (zero-dep)
@@ -95,7 +95,7 @@ isPreviewable(sizeBytes: number, maxBytes: number): boolean
 
 ## Settings
 
-One new key, configurable from the existing `/agent-files-settings` menu:
+One new key, configurable from the existing `/pi-files-settings` menu:
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -136,8 +136,8 @@ with `←/→`. Stored in bytes; the menu shows/edits **KB** (step 64 KB, range
 ## Files
 
 ```
-packages/agent-files/
-├── extensions/agent-files.ts   # + spawn opener, peek overlay, new keys
+packages/pi-files/
+├── extensions/pi-files.ts   # + spawn opener, peek overlay, new keys
 ├── src/core.ts                 # + buildOpenCommand, detectLanguageFromPath,
 │                               #   looksBinary, isPreviewable
 ├── test/core.test.ts           # + unit tests for the four helpers

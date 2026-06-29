@@ -9,9 +9,10 @@ Pi coding agent extensions by [guneriu](https://github.com/guneriu).
 | [`@guneriu/pi-copilot-quota`](./packages/copilot-quota) | `pi install npm:@guneriu/pi-copilot-quota` | GitHub Copilot quota chip, session cost, `/copilot-rates` |
 | [`@guneriu/pi-footer`](./packages/pi-footer) | `pi install npm:@guneriu/pi-footer` | Enhanced footer (requires pi-copilot-quota) |
 | [`@guneriu/pi-session-files`](./packages/session-files) | `pi install npm:@guneriu/pi-session-files` | Track context, read, and modified files |
-| [`@guneriu/pi-agent-files`](./packages/agent-files) | `pi install npm:@guneriu/pi-agent-files` | Agent-edited files widget + interactive project tree (`/agent-files`, `/files`) |
+| [`@guneriu/pi-files`](./packages/pi-files) | `pi install npm:@guneriu/pi-files` | Agent-edited files widget + interactive project tree (`/pi-files`, `/pi-files-settings`) |
+| [`@guneriu/pi-keybindings-help`](./packages/keybindings-help) | `pi install npm:@guneriu/pi-keybindings-help` | Press `?` on an empty editor → floating keybindings reference |
 
-## Quick install (all three)
+## Quick install (all packages)
 
 ```bash
 # From GitHub:
@@ -54,11 +55,13 @@ pi install ./pi-extension-mono
 Publish `copilot-quota` before `pi-footer` — `pi-footer` depends on it:
 
 ```bash
-cd packages/copilot-quota && npm publish --access public
-cd packages/pi-footer     && npm publish --access public
-cd packages/session-files && npm publish --access public
+cd packages/copilot-quota      && npm publish --access public
+cd packages/pi-footer          && npm publish --access public
+cd packages/session-files      && npm publish --access public
+cd packages/keybindings-help   && npm publish --access public
+cd packages/pi-files           && npm publish --access public
 ```
 
 ## License
 
-MIT © Ugur Gueneri
+MIT © Uğur Güneri

@@ -68,4 +68,4 @@ Without `@guneriu/pi-copilot-quota` installed: cost and quota sections are hidde
 
 ## License
 
-MIT © Ugur Gueneri
+MIT © Uğur Güneri

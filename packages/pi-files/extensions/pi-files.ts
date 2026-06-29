@@ -1,8 +1,8 @@
 /**
- * agent-files (@guneriu/pi-agent-files)
+ * pi-files (@guneriu/pi-files)
  *
  * Compact widget above the input bar listing files the agent edited this
- * session, plus an on-demand interactive project tree (/agent-files, /files).
+ * session, plus an on-demand interactive project tree (/pi-files, /files).
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, isToolCallEventType } from "@earendil-works/pi-coding-agent";
@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { basename, relative, resolve } from "node:path";
 import {
   ancestorsOf,
+  applyInlineMarkdown,
   buildOpenCommand,
   buildTree,
   buildWidgetLines,
@@ -19,6 +20,7 @@ import {
   detectLanguageFromPath,
   extractEditsFromBranch,
   flattenVisible,
+  highlightMarkdown,
   isPreviewable,
   listProjectFiles,
   looksBinary,
@@ -42,7 +44,7 @@ const DEFAULTS: Settings = {
 };
 
 function getSettingsFile(): string {
-  const dir = `${getAgentDir()}/extensions/pi-agent-files`;
+  const dir = `${getAgentDir()}/extensions/pi-files`;
   mkdirSync(dir, { recursive: true });
   return `${dir}/settings.json`;
 }
@@ -62,7 +64,7 @@ function saveSettings(s: Settings): void {
   }
 }
 
-const WIDGET_ID = "agent-files";
+const WIDGET_ID = "pi-files";
 
 export default function (pi: ExtensionAPI) {
   // absPath -> status, insertion-ordered (oldest first; rendered newest-first).
@@ -103,7 +105,7 @@ export default function (pi: ExtensionAPI) {
     if (files.length === 0) {
       if (settings.showIdleHint) {
         ctx.ui.setWidget(WIDGET_ID, (_tui: any, theme: any) => ({
-          render: () => [theme.fg("dim", "📁 /agent-files — file tree")],
+          render: () => [theme.fg("dim", "📁 /files — file tree")],
           invalidate: () => {},
         }));
       } else {
@@ -118,7 +120,7 @@ export default function (pi: ExtensionAPI) {
       render: () => {
         const lines: string[] = [];
         if (w.header) {
-          lines.push(theme.fg("accent", w.header) + theme.fg("dim", "  ·  /agent-files"));
+          lines.push(theme.fg("accent", w.header) + theme.fg("dim", "  ·  /files"));
         }
         for (const f of shown) {
           const color = f.status === "new" ? "success" : "warning";
@@ -204,11 +206,11 @@ function registerSettingsCommand(
   getCollapsed: () => boolean,
   setCollapsed: (v: boolean, ctx: any) => void,
 ) {
-  pi.registerCommand("agent-files-settings", {
-    description: "Open agent-files settings menu",
+  pi.registerCommand("pi-files-settings", {
+    description: "Open pi-files settings menu",
     handler: async (_args, ctx) => {
       if (ctx.mode !== "tui") {
-        ctx.ui.notify("/agent-files-settings requires TUI mode", "error");
+        ctx.ui.notify("/pi-files-settings requires TUI mode", "error");
         return;
       }
 
@@ -423,19 +425,25 @@ function registerTreeCommands(
     }
 
     const text = raw.toString("utf-8");
+    const lang = detectLanguageFromPath(absPath);
     let rendered: string;
-    try {
-      // S4: force color so cli-highlight (chalk) emits ANSI under pi's managed,
-      // non-TTY stdout. Without this, peek shows uncolored plain text.
-      process.env.FORCE_COLOR ||= "3";
-      // B2: lazy + graceful — if cli-highlight is missing, fall back to plain
-      // text instead of crashing the whole extension at module load.
-      const mod = await import("cli-highlight").catch(() => undefined);
-      rendered = mod?.highlight
-        ? mod.highlight(text, { language: detectLanguageFromPath(absPath), ignoreIllegals: true })
-        : text;
-    } catch {
-      rendered = text; // never crash the peek on a highlight failure
+    if (lang === "markdown") {
+      // Built-in pure highlighter — zero deps, 16-color ANSI, works on every OS.
+      rendered = highlightMarkdown(text);
+    } else {
+      try {
+        // S4: force color so cli-highlight (chalk) emits ANSI under pi's managed,
+        // non-TTY stdout. Without this, peek shows uncolored plain text.
+        process.env.FORCE_COLOR ||= "3";
+        // B2: lazy + graceful — if cli-highlight is missing, fall back to plain
+        // text instead of crashing the whole extension at module load.
+        const mod = await import("cli-highlight").catch(() => undefined);
+        rendered = mod?.highlight
+          ? mod.highlight(text, { language: lang, ignoreIllegals: true })
+          : text;
+      } catch {
+        rendered = text; // never crash the peek on a highlight failure
+      }
     }
     // Tab-expand so widths are predictable; split into display lines.
     const allLines = rendered.replace(/\t/g, "  ").split("\n");
@@ -501,7 +509,7 @@ function registerTreeCommands(
 
   const open = async (ctx: any) => {
     if (ctx.mode !== "tui") {
-      ctx.ui.notify("/agent-files requires TUI mode", "error");
+      ctx.ui.notify("/pi-files requires TUI mode", "error");
       return;
     }
     const cwd = ctx.sessionManager.getCwd();
@@ -640,6 +648,5 @@ function registerTreeCommands(
     );
   };
 
-  pi.registerCommand("agent-files", { description: "Browse the project file tree (agent edits highlighted)", handler: (_a, ctx) => open(ctx) });
-  pi.registerCommand("files", { description: "Alias for /agent-files", handler: (_a, ctx) => open(ctx) });
+  pi.registerCommand("pi-files", { description: "Browse the project file tree (agent edits highlighted)", handler: (_a, ctx) => open(ctx) });
 }

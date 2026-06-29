@@ -1,9 +1,9 @@
 {
   "name": "pi-extension-mono",
   "version": "0.1.0",
-  "description": "Pi coding agent extensions — Copilot quota, enhanced footer, and session file tracker",
+  "description": "Pi coding agent extensions — Copilot quota, enhanced footer, session file tracker, agent-edited files widget, and keybindings help",
   "keywords": ["pi-package", "pi-extension"],
-  "author": "Ugur Gueneri (guneriu)",
+  "author": "Uğur Güneri (guneriu)",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -15,7 +15,7 @@
       "./packages/pi-footer/extensions",
       "./packages/session-files/extensions",
       "./packages/keybindings-help/extensions",
-      "./packages/agent-files/extensions"
+      "./packages/pi-files/extensions"
     ]
   },
   "dependencies": {

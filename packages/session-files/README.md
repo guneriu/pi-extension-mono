@@ -72,4 +72,4 @@ pi install npm:@guneriu/pi-session-files
 
 ## License
 
-MIT © Ugur Gueneri
+MIT © Uğur Güneri

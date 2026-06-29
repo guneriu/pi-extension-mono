@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Pi extension that tracks context files, files read, and files modified in your current session — with sorting and filtering",
   "keywords": ["pi-package", "pi-extension", "session", "files", "context", "tracking"],
-  "author": "Ugur Gueneri (guneriu)",
+  "author": "Uğur Güneri (guneriu)",
   "license": "MIT",
   "files": ["extensions/", "README.md", "LICENSE"],
   "repository": {

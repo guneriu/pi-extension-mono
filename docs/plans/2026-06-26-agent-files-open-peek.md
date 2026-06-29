@@ -1,10 +1,10 @@
-# agent-files: Open & Peek Files — Implementation Plan
+# pi-files: Open & Peek Files — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add file launching to the `/agent-files` tree — `Enter` opens a file in the OS default app (cross-platform), `p` opens an in-TUI syntax-highlighted scrollable peek, with a configurable size cap.
+**Goal:** Add file launching to the `/pi-files` tree — `Enter` opens a file in the OS default app (cross-platform), `p` opens an in-TUI syntax-highlighted scrollable peek, with a configurable size cap.
 
-**Architecture:** Pure helpers (`buildOpenCommand`, `detectLanguageFromPath`, `looksBinary`, `isPreviewable`) land in `src/core.ts` with `node:test` coverage. The extension wires them: a zero-dependency `child_process.spawn` opener, a `cli-highlight`-powered peek overlay, and two new key handlers in the existing tree overlay. A new persistent setting `maxPeekBytes` is exposed through the existing `/agent-files-settings` menu.
+**Architecture:** Pure helpers (`buildOpenCommand`, `detectLanguageFromPath`, `looksBinary`, `isPreviewable`) land in `src/core.ts` with `node:test` coverage. The extension wires them: a zero-dependency `child_process.spawn` opener, a `cli-highlight`-powered peek overlay, and two new key handlers in the existing tree overlay. A new persistent setting `maxPeekBytes` is exposed through the existing `/pi-files-settings` menu.
 
 **Tech Stack:** TypeScript (Node ≥ 23.6 native type-stripping), `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, `cli-highlight` (new runtime dep), Node built-ins (`fs`, `path`, `child_process`), `node:test`.
 
@@ -20,12 +20,12 @@
 
 | File | Change |
 |---|---|
-| `packages/agent-files/src/core.ts` | Add `buildOpenCommand`, `detectLanguageFromPath`, `looksBinary`, `isPreviewable` |
-| `packages/agent-files/test/core.test.ts` | Add unit tests for the four helpers |
-| `packages/agent-files/package.json` | Add `dependencies: { "cli-highlight": "^2.1.11" }` |
+| `packages/pi-files/src/core.ts` | Add `buildOpenCommand`, `detectLanguageFromPath`, `looksBinary`, `isPreviewable` |
+| `packages/pi-files/test/core.test.ts` | Add unit tests for the four helpers |
+| `packages/pi-files/package.json` | Add `dependencies: { "cli-highlight": "^2.1.11" }` |
 | `package.json` (root) | Add `dependencies: { "cli-highlight": "^2.1.11" }` so the git/mono install path resolves it too |
-| `packages/agent-files/extensions/agent-files.ts` | New `maxPeekBytes` setting, settings-menu row, external-open spawn, peek overlay, new tree keys |
-| `packages/agent-files/README.md` | Document open/peek keys + the new setting |
+| `packages/pi-files/extensions/pi-files.ts` | New `maxPeekBytes` setting, settings-menu row, external-open spawn, peek overlay, new tree keys |
+| `packages/pi-files/README.md` | Document open/peek keys + the new setting |
 
 > **Oracle-review fixes folded in:** (B1) `notify` severity is `"warning"` not `"warn"`. (B2) `cli-highlight` is added to BOTH the sub-package and the **root** `package.json`, and is imported **lazily + gracefully** so a missing dep only disables coloring instead of crashing the whole extension. (S3) merged `node:fs`/`node:path` imports are shown verbatim. (S4) force color on so cli-highlight actually emits ANSI under pi's managed stdout. (S5) every peek row gets a trailing reset so multi-line token colors never bleed into padding/border. (S8) peek scroll is clamped in the handler.
 
@@ -34,12 +34,12 @@
 ## Task 1: Core helper — `buildOpenCommand` (TDD)
 
 **Files:**
-- Modify: `packages/agent-files/src/core.ts`
-- Modify: `packages/agent-files/test/core.test.ts`
+- Modify: `packages/pi-files/src/core.ts`
+- Modify: `packages/pi-files/test/core.test.ts`
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `packages/agent-files/test/core.test.ts`:
+Append to `packages/pi-files/test/core.test.ts`:
 
 ```ts
 import { buildOpenCommand } from "../src/core.ts";
@@ -72,12 +72,12 @@ test("buildOpenCommand falls back to xdg-open elsewhere", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: FAIL — `buildOpenCommand` not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `packages/agent-files/src/core.ts`:
+Append to `packages/pi-files/src/core.ts`:
 
 ```ts
 export interface OpenCommand {
@@ -104,14 +104,14 @@ export function buildOpenCommand(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (18 tests total).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/agent-files/src/core.ts packages/agent-files/test/core.test.ts
-git commit -m "feat(agent-files): buildOpenCommand cross-platform opener helper + tests"
+git add packages/pi-files/src/core.ts packages/pi-files/test/core.test.ts
+git commit -m "feat(pi-files): buildOpenCommand cross-platform opener helper + tests"
 ```
 
 ---
@@ -119,12 +119,12 @@ git commit -m "feat(agent-files): buildOpenCommand cross-platform opener helper 
 ## Task 2: Core helpers — `detectLanguageFromPath`, `looksBinary`, `isPreviewable` (TDD)
 
 **Files:**
-- Modify: `packages/agent-files/src/core.ts`
-- Modify: `packages/agent-files/test/core.test.ts`
+- Modify: `packages/pi-files/src/core.ts`
+- Modify: `packages/pi-files/test/core.test.ts`
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `packages/agent-files/test/core.test.ts`:
+Append to `packages/pi-files/test/core.test.ts`:
 
 ```ts
 import {
@@ -159,12 +159,12 @@ test("isPreviewable is true at/under cap, false over", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: FAIL — the three helpers are not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `packages/agent-files/src/core.ts`:
+Append to `packages/pi-files/src/core.ts`:
 
 ```ts
 /** Minimal extension → cli-highlight language id map. Undefined ⇒ auto-detect. */
@@ -223,14 +223,14 @@ export function isPreviewable(sizeBytes: number, maxBytes: number): boolean {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (22 tests total).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/agent-files/src/core.ts packages/agent-files/test/core.test.ts
-git commit -m "feat(agent-files): language detect + binary + previewable helpers + tests"
+git add packages/pi-files/src/core.ts packages/pi-files/test/core.test.ts
+git commit -m "feat(pi-files): language detect + binary + previewable helpers + tests"
 ```
 
 ---
@@ -238,13 +238,13 @@ git commit -m "feat(agent-files): language detect + binary + previewable helpers
 ## Task 3: Add `cli-highlight` dependency (sub-package + root) + `maxPeekBytes` setting
 
 **Files:**
-- Modify: `packages/agent-files/package.json`
+- Modify: `packages/pi-files/package.json`
 - Modify: `package.json` (root)
-- Modify: `packages/agent-files/extensions/agent-files.ts`
+- Modify: `packages/pi-files/extensions/pi-files.ts`
 
 - [ ] **Step 1: Add the runtime dependency to the sub-package**
 
-In `packages/agent-files/package.json`, add a `dependencies` block (keep
+In `packages/pi-files/package.json`, add a `dependencies` block (keep
 `peerDependencies` as-is). Insert it directly before `"peerDependencies"`:
 
 ```json
@@ -269,13 +269,13 @@ has only `peerDependencies`):
 
 - [ ] **Step 3: Install it (resolves locally for the smoke test)**
 
-Run: `cd packages/agent-files && npm install && cd ../.. && npm install`
+Run: `cd packages/pi-files && npm install && cd ../.. && npm install`
 Expected: `cli-highlight` resolves. Verify either location exists:
-`(test -d packages/agent-files/node_modules/cli-highlight || test -d node_modules/cli-highlight) && echo OK` prints `OK`.
+`(test -d packages/pi-files/node_modules/cli-highlight || test -d node_modules/cli-highlight) && echo OK` prints `OK`.
 
 - [ ] **Step 4: Extend the `Settings` type + defaults**
 
-In `packages/agent-files/extensions/agent-files.ts`, update the `Settings`
+In `packages/pi-files/extensions/pi-files.ts`, update the `Settings`
 interface and `DEFAULTS` (currently 3 keys):
 
 Replace:
@@ -308,24 +308,24 @@ const DEFAULTS: Settings = {
 
 - [ ] **Step 5: Verify core tests still pass**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (22 tests) — manifest/type changes must not break core.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/agent-files/package.json package.json packages/agent-files/extensions/agent-files.ts
-git commit -m "feat(agent-files): add cli-highlight dep (sub+root) + maxPeekBytes setting"
+git add packages/pi-files/package.json package.json packages/pi-files/extensions/pi-files.ts
+git commit -m "feat(pi-files): add cli-highlight dep (sub+root) + maxPeekBytes setting"
 ```
 
-> Note: if `package-lock.json` files were created/changed by `npm install`, include them too (`git add package-lock.json packages/agent-files/package-lock.json`).
+> Note: if `package-lock.json` files were created/changed by `npm install`, include them too (`git add package-lock.json packages/pi-files/package-lock.json`).
 
 ---
 
 ## Task 4: Settings menu — "Max peek size (KB)" row
 
 **Files:**
-- Modify: `packages/agent-files/extensions/agent-files.ts`
+- Modify: `packages/pi-files/extensions/pi-files.ts`
 
 - [ ] **Step 1: Add the number row to the settings `items` array**
 
@@ -355,14 +355,14 @@ closing `];`). The menu edits **KB**; storage stays in **bytes**:
 
 - [ ] **Step 2: Verify core tests still pass**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (22 tests).
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add packages/agent-files/extensions/agent-files.ts
-git commit -m "feat(agent-files): expose maxPeekBytes in settings menu (KB)"
+git add packages/pi-files/extensions/pi-files.ts
+git commit -m "feat(pi-files): expose maxPeekBytes in settings menu (KB)"
 ```
 
 ---
@@ -370,7 +370,7 @@ git commit -m "feat(agent-files): expose maxPeekBytes in settings menu (KB)"
 ## Task 5: External open on `Enter` (tree overlay)
 
 **Files:**
-- Modify: `packages/agent-files/extensions/agent-files.ts`
+- Modify: `packages/pi-files/extensions/pi-files.ts`
 
 - [ ] **Step 1: Extend imports**
 
@@ -454,14 +454,14 @@ with:
 
 - [ ] **Step 5: Verify core tests still pass**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (22 tests).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/agent-files/extensions/agent-files.ts
-git commit -m "feat(agent-files): Enter opens files in OS default app"
+git add packages/pi-files/extensions/pi-files.ts
+git commit -m "feat(pi-files): Enter opens files in OS default app"
 ```
 
 ---
@@ -469,7 +469,7 @@ git commit -m "feat(agent-files): Enter opens files in OS default app"
 ## Task 6: In-TUI peek overlay on `p` (tree overlay)
 
 **Files:**
-- Modify: `packages/agent-files/extensions/agent-files.ts`
+- Modify: `packages/pi-files/extensions/pi-files.ts`
 
 - [ ] **Step 1: Extend imports for the peek (merged, no duplicates) (S3)**
 
@@ -656,14 +656,14 @@ closing `}`, add:
 
 - [ ] **Step 4: Verify core tests still pass**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (22 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/agent-files/extensions/agent-files.ts
-git commit -m "feat(agent-files): p opens in-TUI syntax-highlighted peek with size/binary guards"
+git add packages/pi-files/extensions/pi-files.ts
+git commit -m "feat(pi-files): p opens in-TUI syntax-highlighted peek with size/binary guards"
 ```
 
 ---
@@ -671,11 +671,11 @@ git commit -m "feat(agent-files): p opens in-TUI syntax-highlighted peek with si
 ## Task 7: Docs + manual smoke test
 
 **Files:**
-- Modify: `packages/agent-files/README.md`
+- Modify: `packages/pi-files/README.md`
 
 - [ ] **Step 1: Update the tree-overlay key table**
 
-In `packages/agent-files/README.md`, replace the "Inside the project tree"
+In `packages/pi-files/README.md`, replace the "Inside the project tree"
 table body with:
 
 ```markdown
@@ -718,20 +718,20 @@ adjusted with `←/→` in 64 KB steps (range 64 KB–8 MB).
 
 - [ ] **Step 4: Run the full core test suite**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (22 tests).
 
 - [ ] **Step 5: Manual TUI smoke test**
 
 Run `pi` in this repo (extension auto-loads via root `pi.extensions`), then:
-1. `/agent-files` → move to a source file → **`Enter`**: confirm it opens in your
+1. `/pi-files` → move to a source file → **`Enter`**: confirm it opens in your
    default editor/app.
 2. Move to a file → **`p`**: confirm a syntax-highlighted, scrollable preview;
    test `↑/↓`, `PgUp/PgDn`, `g`/`G`, `Esc`.
 3. `p` on a large file (> current cap) → confirm the "too large" notification.
 4. `p` on a binary (e.g. an image or compiled file) → confirm the "binary"
    notification.
-5. `/agent-files-settings` → lower **Max peek size (KB)** → reopen `/agent-files`
+5. `/pi-files-settings` → lower **Max peek size (KB)** → reopen `/pi-files`
    → `p` on a file now over the lowered cap → confirm it's refused.
 6. Confirm `→`/`←` still only expand/collapse dirs (no open).
 7. Confirm peek output is actually **colored** (S4/FORCE_COLOR). If it's plain,
@@ -747,8 +747,8 @@ Expected: all behaviors verified.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/agent-files/README.md
-git commit -m "docs(agent-files): document open/peek keys + maxPeekBytes setting"
+git add packages/pi-files/README.md
+git commit -m "docs(pi-files): document open/peek keys + maxPeekBytes setting"
 ```
 
 ---

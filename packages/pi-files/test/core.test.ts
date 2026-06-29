@@ -184,8 +184,106 @@ test("isPreviewable is true at/under cap, false over", () => {
   assert.equal(isPreviewable(513, 512), false);
 });
 
+import { highlightMarkdown, applyInlineMarkdown } from "../src/core.ts";
+
+// ANSI code constants for assertions
+const RST  = "\x1b[0m";
+const BOLD = "\x1b[1m";
+const YLW  = "\x1b[33m";
+const CYN  = "\x1b[36m";
+const GRN  = "\x1b[32m";
+const BLU  = "\x1b[94m";
+
+/** Strip all ANSI SGR codes so we can assert plain text content separately. */
+const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+test("highlightMarkdown: h1 is bold + cyan, text preserved", () => {
+  const out = highlightMarkdown("# Hello World");
+  assert.ok(out.includes(BOLD), "h1 must be bold");
+  assert.ok(out.includes(CYN),  "h1 must be cyan");
+  assert.ok(strip(out).includes("Hello World"));
+});
+
+test("highlightMarkdown: h2 is bold + cyan, h3 is dim + cyan", () => {
+  const h2 = highlightMarkdown("## Section");
+  assert.ok(h2.includes(BOLD) && h2.includes(CYN));
+  const h3 = highlightMarkdown("### Sub");
+  assert.ok(h3.includes(CYN));
+  assert.ok(strip(h3).includes("Sub"));
+});
+
+test("highlightMarkdown: fenced code block lines are yellow", () => {
+  const out = highlightMarkdown("```ts\nconst x = 1;\n```");
+  const lines = out.split("\n");
+  assert.ok(lines[0].includes(YLW), "opening fence is yellow");
+  assert.ok(lines[1].includes(YLW), "code inside fence is yellow");
+  assert.ok(lines[2].includes(YLW), "closing fence is yellow");
+});
+
+test("highlightMarkdown: fenced blocks do not affect lines after closing fence", () => {
+  const out = highlightMarkdown("```\ncode\n```\nnormal");
+  const lines = out.split("\n");
+  // "normal" line should NOT contain the code-block yellow (may have inline formatting reset only)
+  assert.ok(!lines[3].startsWith(YLW), "line after fence is not styled as code");
+});
+
+test("highlightMarkdown: unordered list marker is green", () => {
+  const out = highlightMarkdown("- item one");
+  assert.ok(out.includes(GRN));
+  assert.ok(strip(out).includes("item one"));
+});
+
+test("highlightMarkdown: ordered list marker is green", () => {
+  const out = highlightMarkdown("1. first");
+  assert.ok(out.includes(GRN));
+  assert.ok(strip(out).includes("first"));
+});
+
+test("highlightMarkdown: blockquote is blue", () => {
+  const out = highlightMarkdown("> quoted text");
+  assert.ok(out.includes(BLU));
+  assert.ok(strip(out).includes("> quoted text"));
+});
+
+test("highlightMarkdown: plain text round-trips unchanged", () => {
+  const out = highlightMarkdown("just plain text");
+  assert.equal(strip(out), "just plain text");
+});
+
+test("applyInlineMarkdown: inline code is yellow", () => {
+  const out = applyInlineMarkdown("use `const` keyword");
+  assert.ok(out.includes(YLW));
+  assert.ok(strip(out).includes("`const`"));
+});
+
+test("applyInlineMarkdown: **bold** gets bold escape", () => {
+  const out = applyInlineMarkdown("**important**");
+  assert.ok(out.includes(BOLD));
+  assert.ok(strip(out).includes("**important**"));
+});
+
+test("applyInlineMarkdown: *italic* gets italic escape", () => {
+  const IT = "\x1b[3m";
+  const out = applyInlineMarkdown("*note*");
+  assert.ok(out.includes(IT));
+  assert.ok(strip(out).includes("*note*"));
+});
+
+test("applyInlineMarkdown: [link](url) is magenta + dim url", () => {
+  const MGT = "\x1b[35m";
+  const out = applyInlineMarkdown("[click here](https://example.com)");
+  assert.ok(out.includes(MGT));
+  assert.ok(strip(out).includes("click here"));
+  assert.ok(strip(out).includes("https://example.com"));
+});
+
+test("applyInlineMarkdown: text with no markup passes through", () => {
+  const out = applyInlineMarkdown("ordinary words");
+  assert.equal(out, "ordinary words");
+});
+
 test("walkDirRelative lists files relative, excluding .git and node_modules", () => {
-  const dir = mkdtempSync(join(tmpdir(), "agent-files-"));
+  const dir = mkdtempSync(join(tmpdir(), "pi-files-"));
   mkdirSync(join(dir, "sub"));
   mkdirSync(join(dir, ".git"));
   mkdirSync(join(dir, "node_modules"));

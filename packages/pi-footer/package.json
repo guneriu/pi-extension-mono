@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Enhanced pi footer with path, branch, token counts, cache %, context window, Copilot cost with subagent breakdown, and model/thinking level",
   "keywords": ["pi-package", "pi-extension", "footer", "copilot", "tokens", "cost"],
-  "author": "Ugur Gueneri (guneriu)",
+  "author": "Uğur Güneri (guneriu)",
   "license": "MIT",
   "files": ["extensions/", "README.md", "LICENSE"],
   "dependencies": {

@@ -1,4 +1,4 @@
-# @guneriu/pi-agent-files
+# @guneriu/pi-files
 
 Shows the files the agent edited this session in a compact widget above the
 input bar, and opens an interactive, gitignore-aware project tree on demand.
@@ -8,11 +8,11 @@ input bar, and opens an interactive, gitignore-aware project tree on demand.
 - **Compact widget** above the editor: `+` new / `M` modified, capped rows with
   `… +N more` overflow so a big change set never swamps the terminal.
 - **Idle hint** when nothing is edited yet (toggle off in settings).
-- **`/agent-files`** (alias **`/files`**) — full-screen tree overlay with
+- **`/pi-files`** — full-screen tree overlay with
   keyboard navigation; auto-expands to your edited files on open.
   - **`Enter`** on a file opens it in your OS default app (macOS, Linux, Windows).
   - **`p`** on a file opens a scrollable, syntax-highlighted in-TUI preview.
-- **`/agent-files-settings`** — interactive settings menu to toggle the widget,
+- **`/pi-files-settings`** — interactive settings menu to toggle the widget,
   collapse it for the session, adjust row cap, set the peek size limit, and more.
 - Respects `.gitignore` via `git ls-files`; falls back to a filesystem walk
   outside git repos.
@@ -20,7 +20,7 @@ input bar, and opens an interactive, gitignore-aware project tree on demand.
 ## Install
 
 ```bash
-pi install npm:@guneriu/pi-agent-files
+pi install npm:@guneriu/pi-files
 # or the whole mono:
 pi install git:github.com/guneriu/pi-extension-mono
 ```
@@ -31,11 +31,10 @@ pi install git:github.com/guneriu/pi-extension-mono
 
 | Command | Description |
 |---|---|
-| `/agent-files` | Open the interactive project tree overlay |
-| `/files` | Alias for `/agent-files` |
-| `/agent-files-settings` | Open the settings menu |
+| `/pi-files` | Open the interactive project tree overlay |
+| `/pi-files-settings` | Open the settings menu |
 
-### Inside the project tree (`/agent-files`)
+### Inside the project tree (`/pi-files`)
 
 | Key | Action |
 |---|---|
@@ -58,7 +57,7 @@ pi install git:github.com/guneriu/pi-extension-mono
     to open them externally instead.
   - Binary files are detected and refused (open them externally).
 
-### Inside the settings menu (`/agent-files-settings`)
+### Inside the settings menu (`/pi-files-settings`)
 
 | Key | Action |
 |---|---|
@@ -69,8 +68,8 @@ pi install git:github.com/guneriu/pi-extension-mono
 
 ## Settings
 
-Settings can be changed interactively via `/agent-files-settings` or by editing
-`<agent-dir>/extensions/pi-agent-files/settings.json` directly.
+Settings can be changed interactively via `/pi-files-settings` or by editing
+`<agent-dir>/extensions/pi-files/settings.json` directly.
 
 | Key | Default | Meaning | Persists? |
 |---|---|---|---|

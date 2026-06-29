@@ -92,4 +92,4 @@ The `Clear GITHUB_TOKEN` setting is needed when your shell has `GITHUB_TOKEN` se
 
 ## License
 
-MIT © Ugur Gueneri
+MIT © Uğur Güneri

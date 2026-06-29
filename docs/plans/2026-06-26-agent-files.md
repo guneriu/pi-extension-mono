@@ -1,10 +1,10 @@
-# agent-files Extension Implementation Plan
+# pi-files Extension Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build `@guneriu/pi-agent-files`, a pi extension that shows agent-edited files in a compact widget above the input bar plus an on-demand full-screen interactive project tree.
+**Goal:** Build `@guneriu/pi-files`, a pi extension that shows agent-edited files in a compact widget above the input bar plus an on-demand full-screen interactive project tree.
 
-**Architecture:** Pure logic lives in `src/core.ts` (no pi/TUI imports, fully unit-tested with `node:test`). The discoverable extension `extensions/agent-files.ts` wires pi events/UI to that logic: a `tool_call`-fed edit tracker, a `setWidget` compact view, and a `ctx.ui.custom` overlay tree sourced from `git ls-files`.
+**Architecture:** Pure logic lives in `src/core.ts` (no pi/TUI imports, fully unit-tested with `node:test`). The discoverable extension `extensions/pi-files.ts` wires pi events/UI to that logic: a `tool_call`-fed edit tracker, a `setWidget` compact view, and a `ctx.ui.custom` overlay tree sourced from `git ls-files`.
 
 **Tech Stack:** TypeScript (Node **≥ 23.6** native type-stripping — no flag needed), `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, Node built-ins (`fs`, `path`, `child_process`), `node:test`.
 
@@ -20,12 +20,12 @@
 
 | File | Responsibility |
 |---|---|
-| `packages/agent-files/src/core.ts` | Pure helpers: classification, widget lines, tree build, visible rows, git parse |
-| `packages/agent-files/test/core.test.ts` | `node:test` unit tests for core |
-| `packages/agent-files/extensions/agent-files.ts` | Extension: events, widget, overlay tree, commands |
-| `packages/agent-files/package.json` | Package manifest (`@guneriu/pi-agent-files`) |
-| `packages/agent-files/README.md` | Usage docs |
-| `packages/agent-files/LICENSE` | MIT (copy from sibling package) |
+| `packages/pi-files/src/core.ts` | Pure helpers: classification, widget lines, tree build, visible rows, git parse |
+| `packages/pi-files/test/core.test.ts` | `node:test` unit tests for core |
+| `packages/pi-files/extensions/pi-files.ts` | Extension: events, widget, overlay tree, commands |
+| `packages/pi-files/package.json` | Package manifest (`@guneriu/pi-files`) |
+| `packages/pi-files/README.md` | Usage docs |
+| `packages/pi-files/LICENSE` | MIT (copy from sibling package) |
 | `package.json` (root) | Register extension dir in `pi.extensions` |
 | `README.md` (root) | Add table row |
 
@@ -34,25 +34,25 @@
 ## Task 1: Package scaffolding
 
 **Files:**
-- Create: `packages/agent-files/package.json`
-- Create: `packages/agent-files/LICENSE`
+- Create: `packages/pi-files/package.json`
+- Create: `packages/pi-files/LICENSE`
 
-- [ ] **Step 1: Create `packages/agent-files/package.json`**
+- [ ] **Step 1: Create `packages/pi-files/package.json`**
 
 ```json
 {
-  "name": "@guneriu/pi-agent-files",
+  "name": "@guneriu/pi-files",
   "version": "0.1.0",
   "type": "module",
   "description": "Shows agent-edited files in a compact widget above the input bar, plus an on-demand interactive project tree (gitignore-aware)",
   "keywords": ["pi-package", "pi-extension", "files", "tree", "explorer", "session"],
-  "author": "Ugur Gueneri (guneriu)",
+  "author": "Uğur Güneri (guneriu)",
   "license": "MIT",
   "files": ["extensions/", "src/", "README.md", "LICENSE"],
   "repository": {
     "type": "git",
     "url": "https://github.com/guneriu/pi-extension-mono",
-    "directory": "packages/agent-files"
+    "directory": "packages/pi-files"
   },
   "pi": {
     "extensions": ["./extensions"]
@@ -66,14 +66,14 @@
 
 - [ ] **Step 2: Copy LICENSE from a sibling package**
 
-Run: `cp packages/session-files/LICENSE packages/agent-files/LICENSE`
-Expected: file exists, `test -f packages/agent-files/LICENSE && echo OK` prints `OK`
+Run: `cp packages/session-files/LICENSE packages/pi-files/LICENSE`
+Expected: file exists, `test -f packages/pi-files/LICENSE && echo OK` prints `OK`
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add packages/agent-files/package.json packages/agent-files/LICENSE
-git commit -m "chore(agent-files): scaffold package manifest + license"
+git add packages/pi-files/package.json packages/pi-files/LICENSE
+git commit -m "chore(pi-files): scaffold package manifest + license"
 ```
 
 ---
@@ -81,12 +81,12 @@ git commit -m "chore(agent-files): scaffold package manifest + license"
 ## Task 2: Core types and edit classification (TDD)
 
 **Files:**
-- Create: `packages/agent-files/src/core.ts`
-- Create: `packages/agent-files/test/core.test.ts`
+- Create: `packages/pi-files/src/core.ts`
+- Create: `packages/pi-files/test/core.test.ts`
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/agent-files/test/core.test.ts`:
+Create `packages/pi-files/test/core.test.ts`:
 
 ```ts
 import { test } from "node:test";
@@ -120,12 +120,12 @@ test("modified can upgrade to new (write of recreated file)", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: FAIL — cannot find module `../src/core.ts` / `classifyEdit` not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `packages/agent-files/src/core.ts`:
+Create `packages/pi-files/src/core.ts`:
 
 ```ts
 export type EditStatus = "new" | "modified";
@@ -150,14 +150,14 @@ export function classifyEdit(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/agent-files/src/core.ts packages/agent-files/test/core.test.ts
-git commit -m "feat(agent-files): edit classification helper + tests"
+git add packages/pi-files/src/core.ts packages/pi-files/test/core.test.ts
+git commit -m "feat(pi-files): edit classification helper + tests"
 ```
 
 ---
@@ -165,12 +165,12 @@ git commit -m "feat(agent-files): edit classification helper + tests"
 ## Task 3: Widget line builder (TDD)
 
 **Files:**
-- Modify: `packages/agent-files/src/core.ts`
-- Modify: `packages/agent-files/test/core.test.ts`
+- Modify: `packages/pi-files/src/core.ts`
+- Modify: `packages/pi-files/test/core.test.ts`
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `packages/agent-files/test/core.test.ts`:
+Append to `packages/pi-files/test/core.test.ts`:
 
 ```ts
 import { buildWidgetLines, type EditedFile } from "../src/core.ts";
@@ -207,12 +207,12 @@ test("empty file list yields no header/rows", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: FAIL — `buildWidgetLines` / `EditedFile` not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `packages/agent-files/src/core.ts`:
+Append to `packages/pi-files/src/core.ts`:
 
 ```ts
 export interface EditedFile {
@@ -253,14 +253,14 @@ export function buildWidgetLines(files: EditedFile[], maxRows: number): WidgetLi
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (8 tests total).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/agent-files/src/core.ts packages/agent-files/test/core.test.ts
-git commit -m "feat(agent-files): widget line builder with cap + overflow"
+git add packages/pi-files/src/core.ts packages/pi-files/test/core.test.ts
+git commit -m "feat(pi-files): widget line builder with cap + overflow"
 ```
 
 ---
@@ -268,12 +268,12 @@ git commit -m "feat(agent-files): widget line builder with cap + overflow"
 ## Task 4: Tree builder + visible rows (TDD)
 
 **Files:**
-- Modify: `packages/agent-files/src/core.ts`
-- Modify: `packages/agent-files/test/core.test.ts`
+- Modify: `packages/pi-files/src/core.ts`
+- Modify: `packages/pi-files/test/core.test.ts`
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `packages/agent-files/test/core.test.ts`:
+Append to `packages/pi-files/test/core.test.ts`:
 
 ```ts
 import {
@@ -318,12 +318,12 @@ test("flattenVisible only descends into expanded dirs", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: FAIL — `buildTree`/`ancestorsOf`/`flattenVisible`/`parseGitFileList` not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `packages/agent-files/src/core.ts`:
+Append to `packages/pi-files/src/core.ts`:
 
 ```ts
 export interface TreeNode {
@@ -398,14 +398,14 @@ export function flattenVisible(root: TreeNode, expanded: Set<string>): TreeNode[
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (12 tests total).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/agent-files/src/core.ts packages/agent-files/test/core.test.ts
-git commit -m "feat(agent-files): tree builder, ancestors, visible-row flatten + tests"
+git add packages/pi-files/src/core.ts packages/pi-files/test/core.test.ts
+git commit -m "feat(pi-files): tree builder, ancestors, visible-row flatten + tests"
 ```
 
 ---
@@ -413,12 +413,12 @@ git commit -m "feat(agent-files): tree builder, ancestors, visible-row flatten +
 ## Task 5: Edit tracker module (session scan, no TUI)
 
 **Files:**
-- Modify: `packages/agent-files/src/core.ts`
-- Modify: `packages/agent-files/test/core.test.ts`
+- Modify: `packages/pi-files/src/core.ts`
+- Modify: `packages/pi-files/test/core.test.ts`
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `packages/agent-files/test/core.test.ts`:
+Append to `packages/pi-files/test/core.test.ts`:
 
 ```ts
 import { extractEditsFromBranch } from "../src/core.ts";
@@ -451,12 +451,12 @@ test("extractEditsFromBranch ignores non-assistant + missing paths", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: FAIL — `extractEditsFromBranch` not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `packages/agent-files/src/core.ts`:
+Append to `packages/pi-files/src/core.ts`:
 
 ```ts
 export interface BranchEdit {
@@ -489,14 +489,14 @@ export function extractEditsFromBranch(branch: any[]): BranchEdit[] {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (14 tests total).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/agent-files/src/core.ts packages/agent-files/test/core.test.ts
-git commit -m "feat(agent-files): session branch edit extractor + tests"
+git add packages/pi-files/src/core.ts packages/pi-files/test/core.test.ts
+git commit -m "feat(pi-files): session branch edit extractor + tests"
 ```
 
 ---
@@ -504,8 +504,8 @@ git commit -m "feat(agent-files): session branch edit extractor + tests"
 ## Task 6: File-list source (git ls-files + fallback)
 
 **Files:**
-- Modify: `packages/agent-files/src/core.ts`
-- Modify: `packages/agent-files/test/core.test.ts`
+- Modify: `packages/pi-files/src/core.ts`
+- Modify: `packages/pi-files/test/core.test.ts`
 
 This task adds an impure helper that shells out to git, with a filesystem
 fallback. The pure parsing is already tested (Task 4); here we test the fallback
@@ -513,7 +513,7 @@ walker against a temp dir.
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `packages/agent-files/test/core.test.ts`:
+Append to `packages/pi-files/test/core.test.ts`:
 
 ```ts
 import { walkDirRelative } from "../src/core.ts";
@@ -522,7 +522,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 test("walkDirRelative lists files relative, excluding .git and node_modules", () => {
-  const dir = mkdtempSync(join(tmpdir(), "agent-files-"));
+  const dir = mkdtempSync(join(tmpdir(), "pi-files-"));
   mkdirSync(join(dir, "sub"));
   mkdirSync(join(dir, ".git"));
   mkdirSync(join(dir, "node_modules"));
@@ -538,12 +538,12 @@ test("walkDirRelative lists files relative, excluding .git and node_modules", ()
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: FAIL — `walkDirRelative` not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `packages/agent-files/src/core.ts`:
+Append to `packages/pi-files/src/core.ts`:
 
 ```ts
 import { readdirSync, existsSync } from "node:fs";
@@ -601,14 +601,14 @@ export function listProjectFiles(cwd: string): string[] {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (15 tests total).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/agent-files/src/core.ts packages/agent-files/test/core.test.ts
-git commit -m "feat(agent-files): project file source (git ls-files + fs fallback)"
+git add packages/pi-files/src/core.ts packages/pi-files/test/core.test.ts
+git commit -m "feat(pi-files): project file source (git ls-files + fs fallback)"
 ```
 
 ---
@@ -616,7 +616,7 @@ git commit -m "feat(agent-files): project file source (git ls-files + fs fallbac
 ## Task 7: Extension wiring — tracker + widget (tree stub)
 
 **Files:**
-- Create: `packages/agent-files/extensions/agent-files.ts`
+- Create: `packages/pi-files/extensions/pi-files.ts`
 
 No new unit tests (TUI/event wiring is verified by the manual smoke test in
 Task 9). The file compiles and is committed on its own via a `registerTreeCommands`
@@ -624,14 +624,14 @@ stub that Task 8 replaces.
 
 - [ ] **Step 1: Create the extension file (settings + tracker + widget + tree stub)**
 
-Create `packages/agent-files/extensions/agent-files.ts`:
+Create `packages/pi-files/extensions/pi-files.ts`:
 
 ```ts
 /**
- * agent-files (@guneriu/pi-agent-files)
+ * agent-files (@guneriu/pi-files)
  *
  * Compact widget above the input bar listing files the agent edited this
- * session, plus an on-demand interactive project tree (/agent-files, /files).
+ * session, plus an on-demand interactive project tree (/pi-files, /files).
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, isToolCallEventType } from "@earendil-works/pi-coding-agent";
@@ -655,7 +655,7 @@ interface Settings {
 const DEFAULTS: Settings = { enabled: true, maxWidgetRows: 6, showIdleHint: true };
 
 function getSettingsFile(): string {
-  const dir = `${getAgentDir()}/extensions/pi-agent-files`;
+  const dir = `${getAgentDir()}/extensions/pi-files`;
   mkdirSync(dir, { recursive: true });
   return `${dir}/settings.json`;
 }
@@ -667,7 +667,7 @@ function loadSettings(): Settings {
   }
 }
 
-const WIDGET_ID = "agent-files";
+const WIDGET_ID = "pi-files";
 
 export default function (pi: ExtensionAPI) {
   // absPath -> status, insertion-ordered (oldest first; rendered newest-first).
@@ -700,7 +700,7 @@ export default function (pi: ExtensionAPI) {
     if (files.length === 0) {
       if (settings.showIdleHint) {
         ctx.ui.setWidget(WIDGET_ID, (_tui: any, theme: any) => ({
-          render: () => [theme.fg("dim", "📁 /agent-files — file tree")],
+          render: () => [theme.fg("dim", "📁 /pi-files — file tree")],
           invalidate: () => {},
         }));
       } else {
@@ -715,7 +715,7 @@ export default function (pi: ExtensionAPI) {
       render: () => {
         const lines: string[] = [];
         if (w.header) {
-          lines.push(theme.fg("accent", w.header) + theme.fg("dim", "  ·  /agent-files"));
+          lines.push(theme.fg("accent", w.header) + theme.fg("dim", "  ·  /pi-files"));
         }
         for (const f of shown) {
           const color = f.status === "new" ? "success" : "warning";
@@ -791,14 +791,14 @@ function registerTreeCommands(_pi: ExtensionAPI, _edited: Map<string, EditStatus
 
 - [ ] **Step 2: Run the core tests (must still pass)**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (15 tests) — the new file must not break core.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add packages/agent-files/extensions/agent-files.ts
-git commit -m "feat(agent-files): settings, edit tracker, compact widget (tree stub)"
+git add packages/pi-files/extensions/pi-files.ts
+git commit -m "feat(pi-files): settings, edit tracker, compact widget (tree stub)"
 ```
 
 ---
@@ -806,7 +806,7 @@ git commit -m "feat(agent-files): settings, edit tracker, compact widget (tree s
 ## Task 8: Extension wiring — interactive tree overlay (replaces stub)
 
 **Files:**
-- Modify: `packages/agent-files/extensions/agent-files.ts`
+- Modify: `packages/pi-files/extensions/pi-files.ts`
 
 - [ ] **Step 1: Extend imports**
 
@@ -837,13 +837,13 @@ import { matchesKey, Key, truncateToWidth, visibleWidth } from "@earendil-works/
 - [ ] **Step 2: Replace the `registerTreeCommands` stub**
 
 Replace the stub `registerTreeCommands` at the end of
-`packages/agent-files/extensions/agent-files.ts` with the real implementation:
+`packages/pi-files/extensions/pi-files.ts` with the real implementation:
 
 ```ts
 function registerTreeCommands(pi: ExtensionAPI, edited: Map<string, EditStatus>) {
   const open = async (ctx: any) => {
     if (ctx.mode !== "tui") {
-      ctx.ui.notify("/agent-files requires TUI mode", "error");
+      ctx.ui.notify("/pi-files requires TUI mode", "error");
       return;
     }
     const cwd = ctx.sessionManager.getCwd();
@@ -969,21 +969,21 @@ function registerTreeCommands(pi: ExtensionAPI, edited: Map<string, EditStatus>)
     );
   };
 
-  pi.registerCommand("agent-files", { description: "Browse the project file tree (agent edits highlighted)", handler: (_a, ctx) => open(ctx) });
-  pi.registerCommand("files", { description: "Alias for /agent-files", handler: (_a, ctx) => open(ctx) });
+  pi.registerCommand("pi-files", { description: "Browse the project file tree (agent edits highlighted)", handler: (_a, ctx) => open(ctx) });
+  pi.registerCommand("files", { description: "Alias for /pi-files", handler: (_a, ctx) => open(ctx) });
 }
 ```
 
 - [ ] **Step 3: Type-check / sanity-run the core tests still pass**
 
-Run: `node --test packages/agent-files/test/core.test.ts`
+Run: `node --test packages/pi-files/test/core.test.ts`
 Expected: PASS (15 tests) — extension changes must not break core.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add packages/agent-files/extensions/agent-files.ts
-git commit -m "feat(agent-files): widget + interactive project tree overlay"
+git add packages/pi-files/extensions/pi-files.ts
+git commit -m "feat(pi-files): widget + interactive project tree overlay"
 ```
 
 ---
@@ -993,7 +993,7 @@ git commit -m "feat(agent-files): widget + interactive project tree overlay"
 **Files:**
 - Modify: `package.json` (root)
 - Modify: `README.md` (root)
-- Create: `packages/agent-files/README.md`
+- Create: `packages/pi-files/README.md`
 
 - [ ] **Step 1: Register the extension in root `package.json`**
 
@@ -1006,7 +1006,7 @@ In `package.json`, add the new path to `pi.extensions` (keep existing entries):
       "./packages/pi-footer/extensions",
       "./packages/session-files/extensions",
       "./packages/keybindings-help/extensions",
-      "./packages/agent-files/extensions"
+      "./packages/pi-files/extensions"
     ]
   },
 ```
@@ -1016,13 +1016,13 @@ In `package.json`, add the new path to `pi.extensions` (keep existing entries):
 Add under the existing table rows:
 
 ```markdown
-| [`@guneriu/pi-agent-files`](./packages/agent-files) | `pi install npm:@guneriu/pi-agent-files` | Agent-edited files widget + interactive project tree (`/agent-files`, `/files`) |
+| [`@guneriu/pi-files`](./packages/pi-files) | `pi install npm:@guneriu/pi-files` | Agent-edited files widget + interactive project tree (`/pi-files`, `/files`) |
 ```
 
-- [ ] **Step 3: Create `packages/agent-files/README.md`**
+- [ ] **Step 3: Create `packages/pi-files/README.md`**
 
 ```markdown
-# @guneriu/pi-agent-files
+# @guneriu/pi-files
 
 Shows the files the agent edited this session in a compact widget above the
 input bar, and opens an interactive, gitignore-aware project tree on demand.
@@ -1032,7 +1032,7 @@ input bar, and opens an interactive, gitignore-aware project tree on demand.
 - **Compact widget** above the editor: `+` new / `M` modified, capped rows with
   `… +N more` overflow so a big change set never swamps the terminal.
 - **Idle hint** when nothing is edited yet (toggle off in settings).
-- **`/agent-files`** (alias **`/files`**) — full-screen tree overlay. Arrow keys
+- **`/pi-files`** (alias **`/files`**) — full-screen tree overlay. Arrow keys
   move, `→`/Enter expand, `←` collapse / jump to parent, `Esc`/`q` close.
 - Respects `.gitignore` via `git ls-files`; falls back to a filesystem walk
   outside git repos.
@@ -1040,14 +1040,14 @@ input bar, and opens an interactive, gitignore-aware project tree on demand.
 ## Install
 
 ```bash
-pi install npm:@guneriu/pi-agent-files
+pi install npm:@guneriu/pi-files
 # or the whole mono:
 pi install git:github.com/guneriu/pi-extension-mono
 ```
 
 ## Settings
 
-`<agent-dir>/extensions/pi-agent-files/settings.json`:
+`<agent-dir>/extensions/pi-files/settings.json`:
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -1058,7 +1058,7 @@ pi install git:github.com/guneriu/pi-extension-mono
 
 - [ ] **Step 4: Run the full core test suite**
 
-Run: `node --test packages/agent-files/test/`
+Run: `node --test packages/pi-files/test/`
 Expected: PASS (15 tests).
 
 - [ ] **Step 5: Manual TUI smoke test**
@@ -1068,15 +1068,15 @@ Run:
 pi install ./pi-extension-mono   # or: cd into a project and use -e
 ```
 Then in a pi TUI session in a git repo:
-1. Confirm the idle hint `📁 /agent-files — file tree` appears above the input.
+1. Confirm the idle hint `📁 /pi-files — file tree` appears above the input.
 2. Ask the agent to create/edit a couple files; confirm the widget shows
    `Edited files (N)` with `+`/`M` rows, **newest edit on top** (C1).
 3. Trigger a write that fails (e.g. to a read-only path); confirm that file is
    **not** listed (S1).
-4. Run `/agent-files`; confirm the overlay opens, auto-expanded to edited files,
+4. Run `/pi-files`; confirm the overlay opens, auto-expanded to edited files,
    arrows/expand/collapse/esc work, edited files are highlighted, the selection
    marker does not hide the ▾/▸ caret (S3), and edited filenames are not clipped (S4).
-5. Shrink the terminal to ~15 rows and reopen `/agent-files`; confirm the box
+5. Shrink the terminal to ~15 rows and reopen `/pi-files`; confirm the box
    fits with all borders visible and scrolls (C2).
 6. Edit >6 files; confirm widget caps at 6 rows + `… +N more`.
 
@@ -1085,8 +1085,8 @@ Expected: all behaviors verified.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add package.json README.md packages/agent-files/README.md
-git commit -m "feat(agent-files): register in monorepo + docs"
+git add package.json README.md packages/pi-files/README.md
+git commit -m "feat(pi-files): register in monorepo + docs"
 ```
 
 ---

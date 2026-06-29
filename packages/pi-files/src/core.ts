@@ -275,3 +275,89 @@ export function looksBinary(buf: Buffer | Uint8Array): boolean {
 export function isPreviewable(sizeBytes: number, maxBytes: number): boolean {
   return sizeBytes <= maxBytes;
 }
+
+// ─── Markdown highlighter ───────────────────────────────────────────────────
+// Pure, zero-dependency, 16-color ANSI — works on macOS, Linux, Windows.
+// Uses only the base 16-color range so there is no truecolor/256-color
+// requirement; every terminal and Windows Terminal supports these codes.
+
+const _R   = "\x1b[0m";  // reset
+const _B   = "\x1b[1m";  // bold
+const _DIM = "\x1b[2m";  // dim
+const _IT  = "\x1b[3m";  // italic
+const _CYN = "\x1b[36m"; // cyan  — headings
+const _YLW = "\x1b[33m"; // yellow — code
+const _GRN = "\x1b[32m"; // green  — list markers
+const _MGT = "\x1b[35m"; // magenta — links
+const _BLU = "\x1b[94m"; // bright blue — blockquotes
+
+/**
+ * Apply inline markdown spans to a single string: inline code, bold, italic,
+ * links. Exported so it can be unit-tested independently.
+ */
+export function applyInlineMarkdown(text: string): string {
+  // Inline code first — content inside backticks is treated as literal.
+  text = text.replace(/`([^`\n]+)`/g, `${_YLW}\`$1\`${_R}`);
+  // Bold: **text** or __text__
+  text = text.replace(/\*\*([^*\n]+)\*\*/g, `${_B}**$1**${_R}`);
+  text = text.replace(/__([^_\n]+)__/g, `${_B}__$1__${_R}`);
+  // Italic: *text* (single, not preceded/followed by another *)
+  text = text.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, `${_IT}*$1*${_R}`);
+  text = text.replace(/(?<!_)_([^_\n]+)_(?!_)/g, `${_IT}_$1_${_R}`);
+  // Links / images: [text](url)
+  text = text.replace(/!?\[([^\]]*)\]\(([^)]*)\)/g, `${_MGT}[$1]${_R}${_DIM}($2)${_R}`);
+  return text;
+}
+
+/**
+ * Syntax-highlight a full markdown document for terminal display.
+ * Processes line-by-line with stateful fenced-code-block tracking.
+ * Emits standard 16-color ANSI codes only — compatible with every terminal.
+ */
+export function highlightMarkdown(text: string): string {
+  let inFence = false;
+  return text
+    .split("\n")
+    .map((line) => {
+      // Fenced code block delimiter (``` or ~~~)
+      if (/^(`{3,}|~{3,})/.test(line)) {
+        inFence = !inFence;
+        return `${_DIM}${_YLW}${line}${_R}`;
+      }
+      // Inside a fenced code block — dim yellow, no further processing
+      if (inFence) return `${_YLW}${_DIM}${line}${_R}`;
+
+      // ATX headings: # … ######
+      const hm = line.match(/^(#{1,6})\s(.+)$/);
+      if (hm) {
+        const marks = hm[1];
+        const body  = applyInlineMarkdown(hm[2]);
+        if (marks.length === 1) return `${_B}${_CYN}${marks} ${_R}${_B}${body}${_R}`;
+        if (marks.length === 2) return `${_B}${_CYN}${marks} ${_R}${body}`;
+        return `${_DIM}${_CYN}${marks} ${_R}${body}`;
+      }
+
+      // Blockquote
+      if (/^>/.test(line)) return `${_BLU}${_DIM}${line}${_R}`;
+
+      // Horizontal rule (must come before setext-underline check)
+      if (/^(\*{3,}|-{3,}|_{3,})$/.test(line)) return `${_DIM}${line}${_R}`;
+
+      // Unordered list item: - / * / + (with optional indentation)
+      const ulm = line.match(/^(\s*)([-*+]) (.*)$/);
+      if (ulm) return `${ulm[1]}${_GRN}${ulm[2]}${_R} ${applyInlineMarkdown(ulm[3])}`;
+
+      // Ordered list item: 1. / 12. (with optional indentation)
+      const olm = line.match(/^(\s*)(\d+\.) (.*)$/);
+      if (olm) return `${olm[1]}${_GRN}${olm[2]}${_R} ${applyInlineMarkdown(olm[3])}`;
+
+      // Table separator row |---|---|
+      if (/^\|[-: |]+\|$/.test(line)) return `${_DIM}${line}${_R}`;
+      // Table data row — dim the pipe characters
+      if (/^\|/.test(line)) return line.replace(/\|/g, `${_DIM}|${_R}`);
+
+      // Plain paragraph text — apply inline spans only
+      return applyInlineMarkdown(line);
+    })
+    .join("\n");
+}

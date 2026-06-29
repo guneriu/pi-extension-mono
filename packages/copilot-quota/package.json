@@ -4,7 +4,7 @@
   "type": "module",
   "description": "GitHub Copilot AI credit usage chip for pi coding agent — shows quota, cost, and per-model rates in the footer",
   "keywords": ["pi-package", "pi-extension", "copilot", "github", "quota", "footer"],
-  "author": "Ugur Gueneri (guneriu)",
+  "author": "Uğur Güneri (guneriu)",
   "license": "MIT",
   "files": ["extensions/", "README.md", "LICENSE"],
   "exports": { ".": "./extensions/copilot-quota.ts" },
