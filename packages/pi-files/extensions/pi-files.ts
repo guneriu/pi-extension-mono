@@ -26,7 +26,10 @@ import {
   listProjectFiles,
   looksBinary,
   parseMvRenames,
+  buildUnifiedDiff,
+  getGitBaseline,
   statusGlyph,
+  type DiffLine,
   type EditStatus,
   type EditedFile,
 } from "../src/core";
@@ -78,6 +81,10 @@ export default function (pi: ExtensionAPI) {
   >();
   // toolCallId -> list of [oldAbs, newAbs] renames detected in bash mv commands.
   const pendingRenames = new Map<string, Array<[string, string]>>();
+  // absPath -> file content at the moment of FIRST edit this session (the
+  // session-accurate diff baseline). Never overwritten once set; cleared on
+  // shutdown; migrated on rename.
+  const snapshots = new Map<string, string>();
   // Loaded once per session, not on every tool call (S2).
   let settings: Settings = loadSettings();
   // Session-only collapse flag — never written to disk, resets on session_start.
@@ -190,6 +197,7 @@ export default function (pi: ExtensionAPI) {
     edited.clear();
     pending.clear();
     pendingRenames.clear();
+    snapshots.clear();
     if (ctx?.mode === "tui") ctx.ui.setWidget(WIDGET_ID, undefined); // N1
   });
 
@@ -215,6 +223,18 @@ export default function (pi: ExtensionAPI) {
     const rawPath = (event.input as { path?: string }).path;
     if (!rawPath) return;
     const abs = resolve(ctx.sessionManager.getCwd(), rawPath);
+    // Capture the pre-edit baseline once, for session-accurate diffs. Only the
+    // FIRST snapshot is kept (true session baseline); skip binary/oversized.
+    if (!snapshots.has(abs) && existsSync(abs)) {
+      try {
+        if (statSync(abs).size <= settings.maxPeekBytes) {
+          const buf = readFileSync(abs);
+          if (!looksBinary(buf.subarray(0, 4096))) {
+            snapshots.set(abs, buf.toString("utf-8"));
+          }
+        }
+      } catch { /* non-fatal: no snapshot for this file */ }
+    }
     pending.set(event.toolCallId, { abs, kind, existsBefore: existsSync(abs) });
   });
 
@@ -239,6 +259,12 @@ export default function (pi: ExtensionAPI) {
               }
             } catch { /* newAbs doesn't exist yet — mv hasn't run or path is wrong */ }
             edited.set(dest, prev);
+            // Migrate the diff snapshot along with the rename.
+            const snap = snapshots.get(oldAbs);
+            if (snap !== undefined) {
+              snapshots.delete(oldAbs);
+              snapshots.set(dest, snap);
+            }
           }
         }
         // Safety net: prune any edited entries whose file no longer exists
@@ -261,7 +287,7 @@ export default function (pi: ExtensionAPI) {
     renderWidget(ctx);
   });
 
-  registerTreeCommands(pi, edited, () => settings);
+  registerTreeCommands(pi, edited, snapshots, () => settings);
   registerSettingsCommand(
     pi,
     () => settings,
@@ -450,6 +476,7 @@ function registerSettingsCommand(
 function registerTreeCommands(
   pi: ExtensionAPI,
   edited: Map<string, EditStatus>,
+  snapshots: Map<string, string>,
   getSettings: () => Settings,
 ) {
   const openExternally = (ctx: any, absPath: string) => {
@@ -465,7 +492,21 @@ function registerTreeCommands(
     }
   };
 
-  const peek = async (ctx: any, absPath: string) => {
+  // Returns the diff baseline for a file, or undefined when none is available.
+  // Snapshot (session-accurate) takes priority; falls back to git HEAD.
+  const resolveBaseline = (
+    cwd: string,
+    absPath: string,
+  ): { before: string; source: "session" | "git" } | undefined => {
+    const snap = snapshots.get(absPath);
+    if (snap !== undefined) return { before: snap, source: "session" };
+    const rel = relative(cwd, absPath).split("\\").join("/");
+    const git = getGitBaseline(cwd, rel);
+    if (git !== undefined) return { before: git, source: "git" };
+    return undefined;
+  };
+
+  const peek = async (ctx: any, absPath: string, preferDiff = false) => {
     const max = getSettings().maxPeekBytes;
     let size = 0;
     try {
@@ -522,30 +563,70 @@ function registerTreeCommands(
     // Tab-expand so widths are predictable; split into display lines.
     const allLines = rendered.replace(/\t/g, "  ").split("\n");
 
+    // Compute the diff lazily against the resolved baseline. A non-empty diff
+    // enables diff mode; identical content (or no baseline) leaves content-only.
+    const cwd = ctx.sessionManager.getCwd();
+    const baseline = resolveBaseline(cwd, absPath);
+    let diff: ReturnType<typeof buildUnifiedDiff> | undefined;
+    if (baseline) {
+      try {
+        diff = buildUnifiedDiff(baseline.before, text);
+      } catch {
+        diff = undefined;
+      }
+      if (diff && diff.lines.length === 0) diff = undefined; // no changes
+    }
+    // Diff-first when requested AND a non-empty diff exists; else content.
+    let mode: "diff" | "content" = preferDiff && diff ? "diff" : "content";
+
+    const styleDiffLine = (theme: any, l: DiffLine): string => {
+      if (l.kind === "add") return theme.fg("success", "+" + l.text);
+      if (l.kind === "del") return theme.fg("warning", "-" + l.text);
+      if (l.kind === "gap") return theme.fg("dim", " ⋯");
+      return theme.fg("muted", " " + l.text);
+    };
+
     let peekScroll = 0;
     await ctx.ui.custom(
       (tui: any, theme: any, _kb: any, done: (v: null) => void) => {
         const B = (s: string) => theme.fg("border", s);
         const bodyH = (): number => Math.max(1, Math.floor(tui.terminal.rows * 0.8) - 4);
 
+        // Rows for the active mode (styled diff lines or highlighted content).
+        const modeRows = (): string[] =>
+          mode === "diff" && diff
+            ? diff.lines.map((l) => styleDiffLine(theme, l))
+            : allLines;
+
         const buildPeek = (width: number): string[] => {
           const innerW = width - 2;
           const h = bodyH();
-          const maxScroll = Math.max(0, allLines.length - h);
+          const rowsAll = modeRows();
+          const maxScroll = Math.max(0, rowsAll.length - h);
           if (peekScroll > maxScroll) peekScroll = maxScroll;
           if (peekScroll < 0) peekScroll = 0;
           const H = "─";
           const lines: string[] = [];
           lines.push(B("╭" + H.repeat(innerW) + "╮"));
-          const title = ` 👁  ${basename(absPath)}`;
-          const pos = `${peekScroll + 1}-${Math.min(peekScroll + h, allLines.length)}/${allLines.length} `;
-          const hint = `↑↓ scroll  g/G ends  spc/esc close  ${pos}`;
+          const glyph = mode === "diff" ? "⊟" : "👁";
+          const title = ` ${glyph}  ${basename(absPath)}`;
+          // Mode-aware footer: diff shows source + counts; content shows position.
+          let hint: string;
+          if (mode === "diff" && diff) {
+            const src = baseline?.source === "git" ? "git" : "session";
+            hint = `[diff·${src}] +${diff.added} −${diff.removed}  d content  ↑↓ g/G  spc/esc close `;
+          } else {
+            const pos = `${peekScroll + 1}-${Math.min(peekScroll + h, rowsAll.length)}/${rowsAll.length}`;
+            const toggle = diff ? "d diff  " : "";
+            hint = `[content] ${toggle}↑↓ g/G  spc/esc close  ${pos} `;
+          }
           const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(hint));
           lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) +
             theme.fg("dim", hint) + B("│"));
           lines.push(B("├" + H.repeat(innerW) + "┤"));
-          const view = allLines.slice(peekScroll, peekScroll + h);
-          const rowsOut = view.length ? view : [theme.fg("dim", " (empty file)")];
+          const view = rowsAll.slice(peekScroll, peekScroll + h);
+          const empty = mode === "diff" ? " (no changes)" : " (empty file)";
+          const rowsOut = view.length ? view : [theme.fg("dim", empty)];
           for (const row of rowsOut) {
             const cell = truncateToWidth(row, innerW);
             // S5: append a hard reset so a multi-line highlight token (block
@@ -563,7 +644,16 @@ function registerTreeCommands(
           invalidate: () => {},
           handleInput: (data: string) => {
             const h = bodyH();
-            const maxScroll = Math.max(0, allLines.length - h);
+            const maxScroll = Math.max(0, modeRows().length - h);
+            // 'd' toggles diff ⇄ content (no-op + notice when no baseline diff).
+            if (data === "d") {
+              if (!diff) { ctx.ui.notify("No diff available (new file or no baseline)", "info"); return; }
+              mode = mode === "diff" ? "content" : "diff";
+              peekScroll = 0; // line counts differ between modes
+              tui.requestRender();
+              return;
+            }
+            // Space or esc/q closes the preview from either mode.
             if (matchesKey(data, Key.escape) || data === "q" || data === " ") return done(null);
             if (matchesKey(data, Key.up))       { peekScroll = Math.max(0, peekScroll - 1);          tui.requestRender(); return; }
             if (matchesKey(data, Key.down))     { peekScroll = Math.min(maxScroll, peekScroll + 1);   tui.requestRender(); return; }
@@ -702,7 +792,7 @@ function registerTreeCommands(
             const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(promptPlain) - visibleWidth(infoPlain));
             lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) + prompt + info + B("│"));
           } else {
-            const hint = "↑↓ move  ↵ open  → expand  ← collapse  spc peek  type to filter  esc close ";
+            const hint = "↑↓ move  ↵ open  → expand  ← collapse  spc preview  type to filter  esc close ";
             const gap = Math.max(1, innerW - visibleWidth(title) - visibleWidth(hint));
             lines.push(B("│") + theme.fg("accent", title) + " ".repeat(gap) +
               theme.fg("dim", hint) + B("│"));
@@ -741,16 +831,16 @@ function registerTreeCommands(
               return;
             }
 
-            // Space: peek selected file (Quick Look — works in both modes)
+            // Space: preview selected file (diff-first for modified files)
             if (data === " ") {
               if (searchQuery) {
                 const path = filterFiles(allFiles, searchQuery)[selected];
-                if (path) void peek(ctx, resolve(cwd, path));
+                if (path) void peek(ctx, resolve(cwd, path), editedStatus.get(path) === "modified");
               } else {
                 const rows = flattenVisible(root, expanded);
                 const node = rows[selected];
-                if (node && !node.isDir) void peek(ctx, resolve(cwd, node.path));
-                else if (node?.isDir) ctx.ui.notify("Space peeks files — press Enter or → to expand directories", "warning");
+                if (node && !node.isDir) void peek(ctx, resolve(cwd, node.path), editedStatus.get(node.path) === "modified");
+                else if (node?.isDir) ctx.ui.notify("Space previews files — press Enter or → to expand directories", "warning");
               }
               return;
             }
