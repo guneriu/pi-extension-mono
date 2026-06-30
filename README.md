@@ -15,12 +15,18 @@ Pi coding agent extensions by [guneriu](https://github.com/guneriu).
 ## Install
 
 ```bash
-# Individual packages (on npm):
+# Individual packages (npm — latest):
 pi install npm:@guneriu/pi-files
 pi install npm:@guneriu/pi-session-files
 pi install npm:@guneriu/pi-keybindings-help
 
-# All five from GitHub (includes copilot-quota and pi-footer):
+# Individual packages (npm — pinned to a release):
+pi install npm:@guneriu/pi-files@0.2.0
+pi install npm:@guneriu/pi-session-files@0.2.0
+pi install npm:@guneriu/pi-keybindings-help@0.2.0
+
+# All five from GitHub (the only way to get copilot-quota and pi-footer):
+# Note: git install always loads all extensions listed in the root package.json.
 pi install git:github.com/guneriu/pi-extension-mono
 
 # Local development:
