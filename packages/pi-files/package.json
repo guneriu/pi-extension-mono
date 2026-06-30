@@ -2,6 +2,11 @@
   "name": "@guneriu/pi-files",
   "version": "0.2.0",
   "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "prepublishOnly": "npm test"
+  },
   "description": "Shows agent-edited files in a compact widget above the input bar, plus an on-demand interactive project tree (gitignore-aware)",
   "keywords": [
     "pi-package",

@@ -6,11 +6,13 @@
   "keywords": ["pi-package", "pi-extension", "copilot", "github", "quota", "footer"],
   "author": "Uğur Güneri (guneriu)",
   "license": "MIT",
+  "private": true,
+  "engines": { "node": ">=18" },
   "files": ["extensions/", "README.md", "LICENSE"],
   "exports": { ".": "./extensions/copilot-quota.ts" },
   "repository": {
     "type": "git",
-    "url": "https://github.com/guneriu/pi-extension-mono",
+    "url": "git+https://github.com/guneriu/pi-extension-mono.git",
     "directory": "packages/copilot-quota"
   },
   "pi": {

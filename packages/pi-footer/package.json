@@ -6,13 +6,15 @@
   "keywords": ["pi-package", "pi-extension", "footer", "copilot", "tokens", "cost"],
   "author": "Uğur Güneri (guneriu)",
   "license": "MIT",
+  "private": true,
+  "engines": { "node": ">=18" },
   "files": ["extensions/", "README.md", "LICENSE"],
   "dependencies": {
     "@guneriu/pi-copilot-quota": "^0.1.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/guneriu/pi-extension-mono",
+    "url": "git+https://github.com/guneriu/pi-extension-mono.git",
     "directory": "packages/pi-footer"
   },
   "pi": {
