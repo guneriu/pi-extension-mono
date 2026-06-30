@@ -515,6 +515,20 @@ test("getGitBaseline: returns undefined for untracked file", () => {
   assert.equal(getGitBaseline(dir, "new.md"), undefined);
 });
 
+test("getGitBaseline: resolves a subdirectory path relative to cwd (monorepo)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-files-gitbase-subdir-"));
+  execFileSync("git", ["init", "--quiet"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "T"], { cwd: dir });
+  mkdirSync(join(dir, "pkg", "src"), { recursive: true });
+  writeFileSync(join(dir, "pkg", "src", "f.md"), "committed\n");
+  execFileSync("git", ["add", "."], { cwd: dir });
+  execFileSync("git", ["commit", "-m", "init", "--quiet"], { cwd: dir });
+  // cwd is the package subdir, path is relative to it (not the repo root).
+  const sub = join(dir, "pkg");
+  assert.equal(getGitBaseline(sub, "src/f.md"), "committed\n");
+});
+
 test("getGitBaseline: returns undefined outside a git repo", () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-files-nogit-base-"));
   writeFileSync(join(dir, "f.md"), "x\n");

@@ -207,7 +207,9 @@ export function listProjectFiles(cwd: string): string[] {
  */
 export function getGitBaseline(cwd: string, relPath: string): string | undefined {
   try {
-    return execFileSync("git", ["show", `HEAD:${relPath}`], {
+    // The `./` prefix forces git to resolve the path relative to `cwd` rather
+    // than the repo root — essential in monorepos where cwd is a subdirectory.
+    return execFileSync("git", ["show", `HEAD:./${relPath}`], {
       cwd,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
