@@ -148,6 +148,12 @@ export default function (pi: ExtensionAPI) {
       const status = classifyEdit(e.kind, true, edited.get(abs));
       edited.set(abs, status);
     }
+    // Prune entries for files that no longer exist — handles renames and
+    // deletes that happened before the reload (bash mv/rm not in write/edit
+    // history, so they can't be replayed, but existsSync catches the result).
+    for (const abs of [...edited.keys()]) {
+      if (!existsSync(abs)) edited.delete(abs);
+    }
   }
 
   pi.on("session_start", async (_event, ctx) => {
