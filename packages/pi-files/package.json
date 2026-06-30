@@ -31,7 +31,8 @@
     "image": "https://raw.githubusercontent.com/guneriu/pi-extension-mono/main/assets/pi-files-preview.png"
   },
   "dependencies": {
-    "cli-highlight": "^2.1.11"
+    "cli-highlight": "^2.1.11",
+    "diff": "^8.0.4"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

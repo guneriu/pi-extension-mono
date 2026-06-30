@@ -151,6 +151,7 @@ export function extractEditsFromBranch(branch: any[]): BranchEdit[] {
 import { readdirSync, existsSync } from "node:fs";
 import { basename, join, resolve as resolvePath } from "node:path";
 import { execFileSync } from "node:child_process";
+import { structuredPatch } from "diff";
 
 const ALWAYS_EXCLUDE = new Set([".git", "node_modules"]);
 
@@ -196,6 +197,24 @@ export function listProjectFiles(cwd: string): string[] {
     return files; // trust git result even when empty — avoids surfacing gitignored files via fallback
   } catch {
     return walkDirRelative(cwd);
+  }
+}
+
+/**
+ * Read a file's committed content from git HEAD. Returns undefined when not a
+ * git repo, git is unavailable, or the path is not tracked at HEAD.
+ * relPath must be posix-relative to cwd.
+ */
+export function getGitBaseline(cwd: string, relPath: string): string | undefined {
+  try {
+    return execFileSync("git", ["show", `HEAD:${relPath}`], {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: 32 * 1024 * 1024,
+    });
+  } catch {
+    return undefined;
   }
 }
 
@@ -406,4 +425,50 @@ export function parseMvRenames(cmd: string, cwd: string): Array<[string, string]
     results.push([oldAbs, newAbs]);
   }
   return results;
+}
+
+// ─── Unified diff ─────────────────────────────────────────────────────────────
+
+export type DiffLineKind = "add" | "del" | "ctx" | "gap";
+export interface DiffLine {
+  kind: DiffLineKind;
+  /** Line content WITHOUT the +/-/space prefix. For "gap" this is the marker. */
+  text: string;
+}
+export interface UnifiedDiff {
+  lines: DiffLine[];
+  added: number;
+  removed: number;
+}
+
+/**
+ * Build a hunk-based unified diff (N lines of context) between two strings.
+ * Backed by jsdiff's structuredPatch — pure JS, cross-platform. Returns
+ * classified lines ready for styling. A "gap" line marks the boundary between
+ * non-adjacent hunks. Identical input yields an empty line list.
+ */
+export function buildUnifiedDiff(before: string, after: string, context = 3): UnifiedDiff {
+  const patch = structuredPatch("a", "b", before, after, "", "", { context });
+  const lines: DiffLine[] = [];
+  let added = 0;
+  let removed = 0;
+  patch.hunks.forEach((hunk, i) => {
+    if (i > 0) lines.push({ kind: "gap", text: "⋯" });
+    for (const raw of hunk.lines) {
+      const marker = raw[0];
+      // jsdiff emits "\ No newline at end of file" — drop it, it's not content.
+      if (marker === "\\") continue;
+      const text = raw.slice(1);
+      if (marker === "+") {
+        lines.push({ kind: "add", text });
+        added++;
+      } else if (marker === "-") {
+        lines.push({ kind: "del", text });
+        removed++;
+      } else {
+        lines.push({ kind: "ctx", text });
+      }
+    }
+  });
+  return { lines, added, removed };
 }

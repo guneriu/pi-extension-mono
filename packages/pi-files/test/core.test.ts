@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { classifyEdit, type EditStatus, parseMvRenames } from "../src/core.ts";
+import { buildUnifiedDiff, getGitBaseline } from "../src/core.ts";
 
 test("write to a non-existent file is 'new'", () => {
   assert.equal(classifyEdit("write", false, undefined), "new");
@@ -446,4 +447,76 @@ test("walkDirRelative lists files relative, excluding .git and node_modules", ()
 
   const files = walkDirRelative(dir).sort();
   assert.deepEqual(files, ["a.md", "sub/b.ts"]);
+});
+
+// ─── buildUnifiedDiff ─────────────────────────────────────────────────────────
+
+test("buildUnifiedDiff: single line change", () => {
+  const d = buildUnifiedDiff("a\nold\nc\n", "a\nnew\nc\n");
+  assert.equal(d.added, 1);
+  assert.equal(d.removed, 1);
+  const del = d.lines.find((l) => l.kind === "del");
+  const add = d.lines.find((l) => l.kind === "add");
+  assert.equal(del?.text, "old");
+  assert.equal(add?.text, "new");
+});
+
+test("buildUnifiedDiff: pure addition", () => {
+  const d = buildUnifiedDiff("a\nb\n", "a\nb\nc\n");
+  assert.equal(d.added, 1);
+  assert.equal(d.removed, 0);
+});
+
+test("buildUnifiedDiff: pure deletion", () => {
+  const d = buildUnifiedDiff("a\nb\nc\n", "a\nc\n");
+  assert.equal(d.removed, 1);
+  assert.equal(d.added, 0);
+});
+
+test("buildUnifiedDiff: identical content yields no changes", () => {
+  const d = buildUnifiedDiff("a\nb\n", "a\nb\n");
+  assert.equal(d.added, 0);
+  assert.equal(d.removed, 0);
+  assert.deepEqual(d.lines, []);
+});
+
+test("buildUnifiedDiff: context lines carry no prefix in text", () => {
+  const d = buildUnifiedDiff("a\nold\nc\n", "a\nnew\nc\n");
+  const ctx = d.lines.filter((l) => l.kind === "ctx");
+  assert.ok(ctx.every((l) => !l.text.startsWith("+") && !l.text.startsWith("-")));
+  assert.ok(ctx.some((l) => l.text === "a"));
+});
+
+test("buildUnifiedDiff: inserts gap marker between non-adjacent hunks", () => {
+  const before = Array.from({ length: 30 }, (_, i) => `line${i}`).join("\n") + "\n";
+  const after = before.replace("line2", "CHANGED2").replace("line27", "CHANGED27");
+  const d = buildUnifiedDiff(before, after, 3);
+  assert.ok(d.lines.some((l) => l.kind === "gap"), "must have a gap between far-apart hunks");
+});
+
+// ─── getGitBaseline ───────────────────────────────────────────────────────────
+
+test("getGitBaseline: returns committed content for tracked file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-files-gitbase-"));
+  execFileSync("git", ["init", "--quiet"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "t@t.com"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "T"], { cwd: dir });
+  writeFileSync(join(dir, "f.md"), "committed\n");
+  execFileSync("git", ["add", "f.md"], { cwd: dir });
+  execFileSync("git", ["commit", "-m", "init", "--quiet"], { cwd: dir });
+  writeFileSync(join(dir, "f.md"), "modified\n"); // working tree differs
+  assert.equal(getGitBaseline(dir, "f.md"), "committed\n");
+});
+
+test("getGitBaseline: returns undefined for untracked file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-files-gitbase-untracked-"));
+  execFileSync("git", ["init", "--quiet"], { cwd: dir });
+  writeFileSync(join(dir, "new.md"), "x\n");
+  assert.equal(getGitBaseline(dir, "new.md"), undefined);
+});
+
+test("getGitBaseline: returns undefined outside a git repo", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-files-nogit-base-"));
+  writeFileSync(join(dir, "f.md"), "x\n");
+  assert.equal(getGitBaseline(dir, "f.md"), undefined);
 });
