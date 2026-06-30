@@ -91,6 +91,21 @@ test("parseMvRenames: -- end-of-options is stripped", () => {
   assert.deepEqual(parseMvRenames("mv -- old.md new.md", CWD), [["/project/old.md", "/project/new.md"]]);
 });
 
+test("parseMvRenames: backslash line continuation is joined before parsing", () => {
+  const cmd = "mv /project/old.md \\\n   /project/new.md";
+  assert.deepEqual(parseMvRenames(cmd, CWD), [["/project/old.md", "/project/new.md"]]);
+});
+
+test("parseMvRenames: backslash continuation with relative paths", () => {
+  const cmd = "mv old.md \\\n   new.md";
+  assert.deepEqual(parseMvRenames(cmd, CWD), [["/project/old.md", "/project/new.md"]]);
+});
+
+test("parseMvRenames: backslash continuation in compound command", () => {
+  const cmd = "echo start && mv old.md \\\n   new.md && echo done";
+  assert.deepEqual(parseMvRenames(cmd, CWD), [["/project/old.md", "/project/new.md"]]);
+});
+
 
 
 const files: EditedFile[] = [

@@ -386,8 +386,11 @@ export function highlightMarkdown(text: string): string {
  */
 export function parseMvRenames(cmd: string, cwd: string): Array<[string, string]> {
   const results: Array<[string, string]> = [];
+  // Join backslash line continuations before splitting (mv src \
+  //    dst → mv src dst)
+  const normalised = cmd.replace(/\\\n\s*/g, " ");
   // Split on shell statement separators: &&, ||, ;, newlines
-  const statements = cmd.split(/&&|\|\||;|\n/);
+  const statements = normalised.split(/&&|\|\||;|\n/);
   for (const stmt of statements) {
     const tokens = stmt.trim().split(/\s+/).filter(Boolean);
     if (tokens.length === 0) continue;
