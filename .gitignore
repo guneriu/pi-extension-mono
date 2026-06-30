@@ -2,3 +2,8 @@ node_modules/
 *.js.map
 .DS_Store
 *.local.json
+*.tgz
+.turbo/
+dist/
+.idea/
+.vscode/

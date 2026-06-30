@@ -36,24 +36,31 @@ pi install /path/to/pi-extension-mono
 ## Development
 
 ```bash
-# Install locally for testing
-pi install ./pi-extension-mono
-
-# After editing, reload in pi
-/reload
+npm ci                      # install workspace deps
+pi install ./pi-extension-mono   # try it inside pi; /reload after edits
+make check                  # local gate: test + pack/publint checks
 ```
 
-## Publish (npm)
+See [`Makefile`](./Makefile) (`make help`) for all automation targets.
 
-Only the three public packages are published to npm:
+## Versioning & releases
 
-```bash
-npm login   # must be logged in as guneriu
+Packages are versioned **independently** with [Changesets](https://github.com/changesets/changesets).
+Releases are run **locally** by the maintainer (no CI/CD).
 
-cd packages/pi-files         && npm publish --access public && cd ../..
-cd packages/session-files    && npm publish --access public && cd ../..
-cd packages/keybindings-help && npm publish --access public && cd ../..
-```
+1. Make a change, then record it: `npx changeset` (or `make changeset`).
+2. When ready to ship: `make version` (bumps + writes CHANGELOGs), commit it.
+3. `make release-local` publishes changed public packages to npm; then
+   `git push --follow-tags` (and optionally `gh release create` per tag).
+
+Git-only packages (`copilot-quota`, `pi-footer`) are `private: true` and are
+versioned/changelogged but never published to npm. Full details in
+[`.changeset/README.md`](./.changeset/README.md) and [`AGENTS.md`](./AGENTS.md).
+
+## Contributing
+
+Issues and PRs welcome — see [`CONTRIBUTING.md`](./CONTRIBUTING.md),
+[`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md), and [`SECURITY.md`](./SECURITY.md).
 
 ## License
 
