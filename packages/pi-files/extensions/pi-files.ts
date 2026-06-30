@@ -140,17 +140,39 @@ export default function (pi: ExtensionAPI) {
   function rebuildFromHistory(ctx: any) {
     edited.clear();
     const branch = ctx.sessionManager.getBranch();
-    for (const e of extractEditsFromBranch(branch)) {
-      const abs = resolve(ctx.sessionManager.getCwd(), e.path);
-      // Reconstruction cannot know the pre-write filesystem state, so we treat
-      // history-derived edits as "modified" (existsBefore = true). Live
-      // tool_call tracking provides accurate new/modified during the session.
-      const status = classifyEdit(e.kind, true, edited.get(abs));
-      edited.set(abs, status);
+    const cwd = ctx.sessionManager.getCwd();
+    // Replay write/edit tool calls AND bash mv renames in order, so the
+    // final tracked path reflects the current filename after renames.
+    for (const entry of branch) {
+      if (entry?.type !== "message") continue;
+      if (entry.message?.role !== "assistant") continue;
+      for (const block of entry.message?.content ?? []) {
+        if (block?.type !== "toolCall") continue;
+        const name = block.name;
+        if (name === "write" || name === "edit") {
+          const path = block.arguments?.path;
+          if (typeof path !== "string" || path.length === 0) continue;
+          const abs = resolve(cwd, path);
+          // Reconstruction cannot know the pre-write filesystem state, so we
+          // treat history-derived edits as "modified" (existsBefore = true).
+          const status = classifyEdit(name, true, edited.get(abs));
+          edited.set(abs, status);
+        } else if (name === "bash") {
+          const cmd = block.arguments?.command;
+          if (typeof cmd !== "string") continue;
+          // Replay mv renames so status follows the file through version bumps.
+          for (const [oldAbs, newAbs] of parseMvRenames(cmd, cwd)) {
+            const prev = edited.get(oldAbs);
+            if (prev !== undefined) {
+              edited.delete(oldAbs);
+              edited.set(newAbs, prev);
+            }
+          }
+        }
+      }
     }
-    // Prune entries for files that no longer exist — handles renames and
-    // deletes that happened before the reload (bash mv/rm not in write/edit
-    // history, so they can't be replayed, but existsSync catches the result).
+    // Prune entries for files that no longer exist — handles renames/deletes
+    // that happened before the reload.
     for (const abs of [...edited.keys()]) {
       if (!existsSync(abs)) edited.delete(abs);
     }
