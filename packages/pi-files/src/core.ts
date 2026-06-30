@@ -149,7 +149,7 @@ export function extractEditsFromBranch(branch: any[]): BranchEdit[] {
 }
 
 import { readdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join, resolve as resolvePath } from "node:path";
 import { execFileSync } from "node:child_process";
 
 const ALWAYS_EXCLUDE = new Set([".git", "node_modules"]);
@@ -370,4 +370,37 @@ export function highlightMarkdown(text: string): string {
       return applyInlineMarkdown(line);
     })
     .join("\n");
+}
+
+/**
+ * Parse `mv <src> <dst>` patterns out of a shell command string.
+ * Returns [oldAbsPath, newAbsPath] pairs for each simple rename found.
+ * Returns [] for globs, multi-source mv, or non-mv commands.
+ * Best-effort only — the caller prunes stale entries as a safety net.
+ *
+ * Note: `mv old.md dir/` (move-into-directory) is returned as-is;
+ * the caller must check statSync(newAbs).isDirectory() and adjust.
+ *
+ * @param cmd  Raw bash command string
+ * @param cwd  Current working directory (for resolving relative paths)
+ */
+export function parseMvRenames(cmd: string, cwd: string): Array<[string, string]> {
+  const results: Array<[string, string]> = [];
+  // Split on shell statement separators: &&, ||, ;, newlines
+  const statements = cmd.split(/&&|\|\||;|\n/);
+  for (const stmt of statements) {
+    const tokens = stmt.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) continue;
+    if (tokens[0] !== "mv") continue;
+    // Strip option flags (e.g. -f -n -i -v --force --) — both short and long
+    const args = tokens.slice(1).filter((t) => !t.startsWith("-"));
+    // Only handle simple two-arg form: mv <src> <dst>
+    if (args.length !== 2) continue;
+    // Reject globs — if either arg contains *, ?, or [ it's ambiguous
+    if (args.some((a) => /[*?[\]]/.test(a))) continue;
+    const oldAbs = args[0].startsWith("/") ? args[0] : resolvePath(cwd, args[0]);
+    const newAbs = args[1].startsWith("/") ? args[1] : resolvePath(cwd, args[1]);
+    results.push([oldAbs, newAbs]);
+  }
+  return results;
 }

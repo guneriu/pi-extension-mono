@@ -9,7 +9,7 @@ import { getAgentDir, isToolCallEventType } from "@earendil-works/pi-coding-agen
 import { matchesKey, Key, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import {
   ancestorsOf,
   applyInlineMarkdown,
@@ -25,6 +25,7 @@ import {
   isPreviewable,
   listProjectFiles,
   looksBinary,
+  parseMvRenames,
   statusGlyph,
   type EditStatus,
   type EditedFile,
@@ -75,6 +76,8 @@ export default function (pi: ExtensionAPI) {
     string,
     { abs: string; kind: "write" | "edit"; existsBefore: boolean }
   >();
+  // toolCallId -> list of [oldAbs, newAbs] renames detected in bash mv commands.
+  const pendingRenames = new Map<string, Array<[string, string]>>();
   // Loaded once per session, not on every tool call (S2).
   let settings: Settings = loadSettings();
   // Session-only collapse flag — never written to disk, resets on session_start.
@@ -158,6 +161,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", async (_event, ctx) => {
     edited.clear();
     pending.clear();
+    pendingRenames.clear();
     if (ctx?.mode === "tui") ctx.ui.setWidget(WIDGET_ID, undefined); // N1
   });
 
@@ -165,6 +169,17 @@ export default function (pi: ExtensionAPI) {
   // existsSync reflects the pre-write filesystem (new vs modified).
   pi.on("tool_call", async (event, ctx) => {
     if (ctx.mode !== "tui") return;
+
+    // Detect `mv <old> <new>` renames inside bash commands so we can update
+    // tracked paths when the rename succeeds (R1).
+    if (isToolCallEventType("bash", event)) {
+      const cmd = (event.input as { command?: string }).command ?? "";
+      const renames = parseMvRenames(cmd, ctx.sessionManager.getCwd());
+      // Always store (even empty) so tool_execution_end runs the safety-net prune.
+      pendingRenames.set(event.toolCallId, renames);
+      return;
+    }
+
     let kind: "write" | "edit" | undefined;
     if (isToolCallEventType("write", event)) kind = "write";
     else if (isToolCallEventType("edit", event)) kind = "edit";
@@ -178,6 +193,36 @@ export default function (pi: ExtensionAPI) {
   // Commit only on success (S1): a failed write/edit must not appear as edited.
   pi.on("tool_execution_end", async (event, ctx) => {
     if (ctx.mode !== "tui") return;
+
+    // Apply rename tracking for bash tool calls (R1).
+    const renames = pendingRenames.get(event.toolCallId);
+    if (renames !== undefined) {
+      pendingRenames.delete(event.toolCallId);
+      if (!event.isError) {
+        for (const [oldAbs, newAbs] of renames) {
+          const prev = edited.get(oldAbs);
+          if (prev !== undefined) {
+            edited.delete(oldAbs);
+            // If newAbs is an existing directory, the file moved INTO it.
+            let dest = newAbs;
+            try {
+              if (statSync(newAbs).isDirectory()) {
+                dest = join(newAbs, basename(oldAbs));
+              }
+            } catch { /* newAbs doesn't exist yet — mv hasn't run or path is wrong */ }
+            edited.set(dest, prev);
+          }
+        }
+        // Safety net: prune any edited entries whose file no longer exists
+        // (handles deletes, globs, and any rename pattern parseMvRenames missed).
+        for (const abs of [...edited.keys()]) {
+          if (!existsSync(abs)) edited.delete(abs);
+        }
+        renderWidget(ctx);
+      }
+      return;
+    }
+
     const p = pending.get(event.toolCallId);
     if (!p) return;
     pending.delete(event.toolCallId);

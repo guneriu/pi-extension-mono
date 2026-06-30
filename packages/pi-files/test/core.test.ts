@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyEdit, type EditStatus } from "../src/core.ts";
+import { classifyEdit, type EditStatus, parseMvRenames } from "../src/core.ts";
 
 test("write to a non-existent file is 'new'", () => {
   assert.equal(classifyEdit("write", false, undefined), "new");
@@ -27,6 +27,71 @@ test("modified can upgrade to new (write of recreated file)", () => {
 });
 
 import { buildWidgetLines, type EditedFile } from "../src/core.ts";
+
+// ─── parseMvRenames ──────────────────────────────────────────────────────────
+
+const CWD = "/project";
+
+test("parseMvRenames: simple relative rename", () => {
+  assert.deepEqual(parseMvRenames("mv old.md new.md", CWD), [["/project/old.md", "/project/new.md"]]);
+});
+
+test("parseMvRenames: absolute paths", () => {
+  assert.deepEqual(parseMvRenames("mv /a/old.md /a/new.md", CWD), [["/a/old.md", "/a/new.md"]]);
+});
+
+test("parseMvRenames: mixed absolute and relative", () => {
+  assert.deepEqual(parseMvRenames("mv /abs/old.md relative/new.md", CWD), [["/abs/old.md", "/project/relative/new.md"]]);
+});
+
+test("parseMvRenames: single flag is ignored", () => {
+  assert.deepEqual(parseMvRenames("mv -f old.md new.md", CWD), [["/project/old.md", "/project/new.md"]]);
+});
+
+test("parseMvRenames: multiple flags are ignored", () => {
+  assert.deepEqual(parseMvRenames("mv -f -n old.md new.md", CWD), [["/project/old.md", "/project/new.md"]]);
+});
+
+test("parseMvRenames: compound command with &&", () => {
+  assert.deepEqual(parseMvRenames("mv a.md b.md && mv c.md d.md", CWD), [
+    ["/project/a.md", "/project/b.md"],
+    ["/project/c.md", "/project/d.md"],
+  ]);
+});
+
+test("parseMvRenames: compound command with semicolon", () => {
+  assert.deepEqual(parseMvRenames("mv a.md b.md; mv c.md d.md", CWD), [
+    ["/project/a.md", "/project/b.md"],
+    ["/project/c.md", "/project/d.md"],
+  ]);
+});
+
+test("parseMvRenames: multi-source (3 args) returns empty", () => {
+  assert.deepEqual(parseMvRenames("mv a.md b.md c/", CWD), []);
+});
+
+test("parseMvRenames: glob returns empty", () => {
+  assert.deepEqual(parseMvRenames("mv *.md dir/", CWD), []);
+});
+
+test("parseMvRenames: non-mv commands return empty", () => {
+  assert.deepEqual(parseMvRenames("echo hello", CWD), []);
+  assert.deepEqual(parseMvRenames("cp a.md b.md", CWD), []);
+  assert.deepEqual(parseMvRenames("", CWD), []);
+  assert.deepEqual(parseMvRenames("rm old.md", CWD), []);
+});
+
+test("parseMvRenames: move-into-dir (2-arg, trailing slash) is returned for caller to resolve", () => {
+  // resolve() strips trailing slash: "/project/dir/" -> "/project/dir"
+  const result = parseMvRenames("mv old.md dir/", CWD);
+  assert.deepEqual(result, [["/project/old.md", "/project/dir"]]);
+});
+
+test("parseMvRenames: -- end-of-options is stripped", () => {
+  assert.deepEqual(parseMvRenames("mv -- old.md new.md", CWD), [["/project/old.md", "/project/new.md"]]);
+});
+
+
 
 const files: EditedFile[] = [
   { relPath: "a.md", status: "modified" },
