@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in an extension is broken or behaves unexpectedly.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting! Please fill this out so it can be reproduced.
+  - type: dropdown
+    id: package
+    attributes:
+      label: Which extension?
+      options:
+        - "@guneriu/pi-files"
+        - "@guneriu/pi-session-files"
+        - "@guneriu/pi-keybindings-help"
+        - "@guneriu/pi-copilot-quota"
+        - "@guneriu/pi-footer"
+        - "not sure / multiple"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect vs. what actually happened?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Install with ...
+        2. Run ...
+        3. See error ...
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: pi version, extension version, OS, Node version.
+      placeholder: |
+        pi: 
+        extension: 
+        OS: 
+        node -v: 
+    validations:
+      required: true

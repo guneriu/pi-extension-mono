@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an idea or improvement for an extension.
+labels: ["enhancement", "triage"]
+body:
+  - type: dropdown
+    id: package
+    attributes:
+      label: Which extension (or new idea)?
+      options:
+        - "@guneriu/pi-files"
+        - "@guneriu/pi-session-files"
+        - "@guneriu/pi-keybindings-help"
+        - "@guneriu/pi-copilot-quota"
+        - "@guneriu/pi-footer"
+        - "new extension idea"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case, not just the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: false
+  - type: markdown
+    attributes:
+      value: "Heads up: for larger features, please open this issue and wait for a thumbs-up before sending a PR, so effort isn't wasted."

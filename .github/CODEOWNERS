@@ -1,0 +1,3 @@
+# These owners are requested for review and required to merge on every PR.
+# Solo-maintainer setup: everything is owned by @guneriu.
+*       @guneriu

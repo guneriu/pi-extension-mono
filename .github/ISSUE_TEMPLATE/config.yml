@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/guneriu/pi-extension-mono/discussions
+    about: Ask questions, share ideas, or get help here instead of opening an issue.
+  - name: pi coding agent
+    url: https://pi.dev
+    about: Docs and help for the pi agent these extensions run on.
